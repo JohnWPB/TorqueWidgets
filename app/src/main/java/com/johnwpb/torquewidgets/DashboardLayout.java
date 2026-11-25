@@ -77,7 +77,7 @@ final class DashboardLayout {
         return preferences(context, id).edit().putString("gauges", encode(gauges)).commit();
     }
 
-    static int newGauge(Context context, Integer source) throws IOException {
+    static synchronized int newGauge(Context context, Integer source) throws IOException {
         SharedPreferences sequence = context.getSharedPreferences("dashboardGaugeIds", Context.MODE_PRIVATE);
         int id = sequence.getInt("next", -2);
         if (!sequence.edit().putInt("next", id - 1).commit()) throw new IOException("Could not allocate gauge");

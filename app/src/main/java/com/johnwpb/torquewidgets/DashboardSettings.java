@@ -34,6 +34,7 @@ public final class DashboardSettings extends Activity {
     private final Map<Integer, Bitmap> images = new HashMap<>();
     private int widgetId, editing = -1, original = -1;
     private boolean saved;
+    private BackupActions<List<DashboardLayout.Gauge>> backups;
     private DashboardLayout.Gauge selected;
     private AppWidgetManager manager;
     private DashboardCanvas preview;
@@ -59,6 +60,8 @@ public final class DashboardSettings extends Activity {
         }
         if (selected == null && !gauges.isEmpty()) selected = gauges.get(gauges.size() - 1);
 
+        backups = new BackupActions<>(this, true, this::backupSnapshot, this::prepareRestore,
+                this::restoreDraft, this::discardRestore, state);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(12), dp(10), dp(12), dp(12));
@@ -88,6 +91,7 @@ public final class DashboardSettings extends Activity {
         front = button(layers, "Bring to front", () -> layer(true));
         remove = button(layers, "Remove", this::removeSelected);
         LinearLayout footer = row(root);
+        button(footer, "Backup", backups::show);
         button(footer, "Cancel", this::finish);
         Button save = button(footer, "Save dashboard", this::save);
         save.setTextColor(GaugeFace.BLUE);
@@ -207,6 +211,7 @@ public final class DashboardSettings extends Activity {
 
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
+        if (backups != null && backups.handle(request, result, data)) return;
         if (request != EDIT || editing >= -1) return;
         int draft = editing;
         DashboardLayout.Gauge previous = find(original);
@@ -251,6 +256,47 @@ public final class DashboardSettings extends Activity {
         preview.invalidate();
     }
 
+    private SettingsBackup backupSnapshot() {
+        List<SettingsBackup.Profile> profiles = new ArrayList<>();
+        for (DashboardLayout.Gauge gauge : gauges) {
+            SettingsBackup.Profile profile = new SettingsBackup.Profile(
+                    CoolantWidget.prefs(this, gauge.id).getAll(), gauge.x, gauge.y, gauge.size);
+            profile.imageFile = GaugeBackground.source(this, gauge.id);
+            profiles.add(profile);
+        }
+        return new SettingsBackup(true, profiles);
+    }
+
+    private List<DashboardLayout.Gauge> prepareRestore(SettingsBackup backup) throws IOException {
+        List<DashboardLayout.Gauge> restored = new ArrayList<>();
+        try {
+            for (SettingsBackup.Profile profile : backup.profiles) {
+                int id = DashboardLayout.newGauge(this, null);
+                restored.add(new DashboardLayout.Gauge(id, profile.x, profile.y, profile.size));
+                profile.apply(this, id);
+            }
+            return restored;
+        } catch (IOException | RuntimeException e) {
+            discardRestore(restored);
+            throw new IOException("Could not restore the dashboard.", e);
+        }
+    }
+
+    private void discardRestore(List<DashboardLayout.Gauge> restored) {
+        for (DashboardLayout.Gauge gauge : restored) DashboardLayout.deleteGauge(this, gauge.id);
+    }
+
+    private void restoreDraft(List<DashboardLayout.Gauge> restored) {
+        for (int id : staged) DashboardLayout.deleteGauge(this, id);
+        staged.clear();
+        gauges.clear();
+        images.clear();
+        gauges.addAll(restored);
+        for (DashboardLayout.Gauge gauge : restored) staged.add(gauge.id);
+        selected = gauges.isEmpty() ? null : gauges.get(gauges.size() - 1);
+        updateSelection();
+    }
+
     private void save() {
         if (!DashboardWidget.owns(this, manager, widgetId)) {
             finish();
@@ -284,6 +330,7 @@ public final class DashboardSettings extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
+        if (backups != null) backups.saveState(state);
         state.putString("layout", DashboardLayout.encode(gauges));
         state.putIntegerArrayList("staged", staged);
         state.putInt("selected", selected == null ? -1 : selected.id);

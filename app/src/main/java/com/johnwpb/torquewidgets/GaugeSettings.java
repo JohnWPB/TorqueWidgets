@@ -31,6 +31,8 @@ public class GaugeSettings extends Activity {
  private Switch indicatorNumbers, scaleNumbers;
  private Button removeBackground;
  private boolean backgroundChanged;
+ private boolean restoredSettings;
+ private BackupActions<SettingsBackup.Profile> backups;
  private Switch editImage;
  private Button fitImage, locationAccess;
  private LinearLayout gpsControls, pidControls;
@@ -146,7 +148,7 @@ public class GaugeSettings extends Activity {
    preview.invalidate();
   });
   right.addView(preview, new LinearLayout.LayoutParams(-1, 0, 1));
-  preview.backgroundImage = GaugeBackground.read(this, id);
+
   Button browse = action("Browse background", false);
   browse.setOnClickListener(view -> {
    Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*")
@@ -212,7 +214,7 @@ public class GaugeSettings extends Activity {
   String key = GaugeLabels.key(labelId, "size");
   for (int i = 0; i < sizes.length; i++) {
    options[i] = sizes[i] == 0 ? "Default" : Integer.toString(sizes[i]);
-   if (sizes[i] == prefs.getInt(key, 0)) selected = i;
+   if (sizes[i] == storedInt(key, 0)) selected = i;
   }
   Button size = dropdownButton(caption.getText() + " font size", options, selected, 12,
           index -> previewSetting(key, sizes[index]));
@@ -224,7 +226,7 @@ public class GaugeSettings extends Activity {
   styleSwitch(visible);
   visible.setContentDescription("Show " + caption.getText());
   String visibility = GaugeLabels.key(labelId, "visible");
-  visible.setChecked(prefs.getBoolean(visibility, true));
+  visible.setChecked(storedFlag(visibility, true));
   visible.setOnCheckedChangeListener((button, checked) -> previewSetting(visibility, checked));
   row.addView(visible, new LinearLayout.LayoutParams(-2, -2));
  }
@@ -241,7 +243,7 @@ public class GaugeSettings extends Activity {
   else section.addView(caption);
   EditText edit = new EditText(this);
   edit.setSingleLine(true);
-  edit.setText(prefs.getString(key, fallback));
+  edit.setText(GaugeFace.text(previewSettings, key, fallback));
   edit.setTextColor(TEXT);
   edit.setTextSize(14);
   edit.setBackground(surface(CONTROL, 10));
@@ -274,7 +276,18 @@ public class GaugeSettings extends Activity {
   }
   prefs = CoolantWidget.prefs(this, id);
   previewSettings.putAll(prefs.getAll());
+  backups = new BackupActions<>(this, false, this::backupSnapshot, backup -> {
+   SettingsBackup.Profile profile = backup.profiles.get(0);
+   profile.image = profile.loadImage();
+   return profile;
+  }, this::restoreDraft, profile -> { if (profile.image != null) profile.image.recycle(); }, state);
+  showSettings(GaugeBackground.read(this, id));
+ }
+
+ private void showSettings(Bitmap background) {
   buildColumns();
+  preview.backgroundImage = background;
+  updateImageButtons();
 
   startSection("Labels");
   field("Name", "Coolant");
@@ -284,12 +297,12 @@ public class GaugeSettings extends Activity {
 
   startSection("Gauge");
   dropdown("Gauge style", new String[]{"Semicircular", "Circular"},
-          prefs.getBoolean("circle", false) ? 1 : 0, index -> previewSetting("circle", index == 1));
+          storedFlag("circle", false) ? 1 : 0, index -> previewSetting("circle", index == 1));
   toggle("showTicks", "Show tick marks", true);
   indicatorNumbers = scaleSwitch("Show indicator numbers");
   toggle("info", "Information only", false);
   dropdown("Indicator style", new String[]{"Illuminated segments", "Sweeping needle", "Continuous arc", "None"},
-          prefs.getInt("style", 0), index -> previewSetting("style", index));
+          storedInt("style", 0), index -> previewSetting("style", index));
   startSection("Colors");
   for (String key : new String[]{"Font color", "Tick color", "Indicator color", "Needle color"}) {
    field(key, "#84D5FF");
@@ -326,6 +339,11 @@ public class GaugeSettings extends Activity {
   scaleNumbers = scaleSwitch("Show all scale numbers");
   for (int i = 0; i < 9; i++) sizeRow("Number " + (i + 1), "scale" + i);
 
+  Button backup = action("Backup", false);
+  backup.setOnClickListener(view -> backups.show());
+  LinearLayout.LayoutParams backupLayout = new LinearLayout.LayoutParams(dp(84), -2);
+  backupLayout.rightMargin = dp(8);
+  footer.addView(backup, backupLayout);
   Button cancel = action("Cancel", false);
   cancel.setOnClickListener(view -> finish());
   footer.addView(cancel, new LinearLayout.LayoutParams(dp(92), -2));
@@ -404,6 +422,7 @@ public class GaugeSettings extends Activity {
 
  @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
   super.onActivityResult(requestCode, resultCode, data);
+  if (backups != null && backups.handle(requestCode, resultCode, data)) return;
   if (requestCode != PICK_BACKGROUND || resultCode != RESULT_OK || data == null || data.getData() == null) return;
   try {
    setBackgroundImage(GaugeBackground.open(getContentResolver(), data.getData()));
@@ -477,10 +496,39 @@ public class GaugeSettings extends Activity {
   Switch control = new Switch(this);
   control.setText(title);
   styleSwitch(control);
-  control.setChecked(prefs.getBoolean(key, fallback));
+  control.setChecked(storedFlag(key, fallback));
   previewSettings.put(key, control.isChecked());
   control.setOnCheckedChangeListener((view, value) -> previewSetting(key, value));
   section.addView(control);
+ }
+
+ private int storedInt(String key, int fallback) {
+  Object value = previewSettings.get(key);
+  return value instanceof Integer ? (Integer) value : fallback;
+ }
+
+ private boolean storedFlag(String key, boolean fallback) {
+  Object value = previewSettings.get(key);
+  return value instanceof Boolean ? (Boolean) value : fallback;
+ }
+
+ private SettingsBackup backupSnapshot() {
+  SettingsBackup.Profile profile = new SettingsBackup.Profile(previewSettings, 0, 0, 1);
+  profile.image = preview.backgroundImage;
+  return new SettingsBackup(false, java.util.Collections.singletonList(profile));
+ }
+
+ private void restoreDraft(SettingsBackup.Profile profile) {
+  previewSettings.clear();
+  previewSettings.putAll(profile.settings);
+  backgroundChanged = true;
+  restoredSettings = true;
+  showSettings(profile.image);
+ }
+
+ @Override protected void onSaveInstanceState(Bundle state) {
+  super.onSaveInstanceState(state);
+  if (backups != null) backups.saveState(state);
  }
 
  private void save() {
@@ -511,6 +559,7 @@ public class GaugeSettings extends Activity {
    }
   }
   SharedPreferences.Editor editor = prefs.edit();
+  if (restoredSettings) editor.clear();
   for (String key : new String[]{"imageLeft", "imageTop", "imageWidth"}) {
    if (!previewSettings.containsKey(key)) editor.remove(key);
   }
