@@ -7,7 +7,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="fitCenter"
-        android:contentDescription="Coolant temperature" />
+        android:contentDescription="Vehicle gauge" />
 
     <TextView
         android:id="@+id/gauge_placeholder"

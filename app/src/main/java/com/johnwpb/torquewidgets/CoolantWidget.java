@@ -16,19 +16,32 @@ import android.os.IBinder;
 import android.os.Looper;
 import android.view.View;
 import android.widget.RemoteViews;
+import java.util.HashSet;
+import java.util.Set;
 import org.prowl.torque.remote.ITorqueService;
 
 public class CoolantWidget extends AppWidgetProvider {
+    private static final Set<Integer> renderedWidgets = new HashSet<>();
     static SharedPreferences prefs(Context context, int id) {
         return context.getSharedPreferences("gauge" + id, Context.MODE_PRIVATE);
     }
 
     static boolean ownsWidget(Context context, AppWidgetManager manager, int id) {
         AppWidgetProviderInfo info = manager.getAppWidgetInfo(id);
-        return info != null && new ComponentName(context, CoolantWidget.class).equals(info.provider);
+        ComponentName provider = new ComponentName(context, CoolantWidget.class);
+        if (info != null) return provider.equals(info.provider);
+        for (int widgetId : manager.getAppWidgetIds(provider)) {
+            if (widgetId == id) return true;
+        }
+        return false;
     }
 
     @Override public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
+        for (int id : ids) {
+            if (ownsWidget(context, manager, id)) {
+                renderInitial(context, manager, id, new GaugeConfig(prefs(context, id)));
+            }
+        }
         if (TorqueLiveService.running) return;
         PendingResult pending = goAsync();
         Context app = context.getApplicationContext();
@@ -47,8 +60,8 @@ public class CoolantWidget extends AppWidgetProvider {
                         if (TorqueLiveService.running || !ownsWidget(app, manager, ids[i])) continue;
                         GaugeConfig config = new GaugeConfig(prefs(app, ids[i]));
                         float value = Float.NaN;
-                        if (readings != null && config.string("PID", "05")
-                                .equals(configs[i].string("PID", "05"))) {
+                        if (readings != null && config.pid()
+                                .equals(configs[i].pid())) {
                             value = config.convert(readings[i]);
                         }
                         render(app, manager, ids[i], config, value);
@@ -94,12 +107,16 @@ public class CoolantWidget extends AppWidgetProvider {
     static float read(ITorqueService torque, GaugeConfig config) {
         if (torque == null) return Float.NaN;
         try {
-            String[] values = torque.getPIDValues(new String[]{config.string("PID", "05").trim()});
+            String[] values = torque.getPIDValues(new String[]{config.pid()});
             return Float.parseFloat(values[0]);
         } catch (Exception ignored) {
             // The requested PID can be unavailable even when Torque is connected.
             return Float.NaN;
         }
+    }
+
+    static void renderInitial(Context context, AppWidgetManager manager, int id, GaugeConfig config) {
+        if (!renderedWidgets.contains(id)) render(context, manager, id, config, Float.NaN);
     }
 
     static void render(Context context, AppWidgetManager manager, int id,
@@ -109,16 +126,20 @@ public class CoolantWidget extends AppWidgetProvider {
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.gauge);
         views.setImageViewBitmap(R.id.gauge, bitmap);
         views.setViewVisibility(R.id.gauge_placeholder, View.GONE);
-        views.setContentDescription(R.id.gauge, config.string("Name", "Coolant") + " "
+        views.setContentDescription(R.id.gauge, config.name() + " "
                 + (Float.isFinite(value) ? GaugeRenderer.number(value) + " " + config.units() : "NO DATA"));
         Intent settings = new Intent(context, GaugeSettings.class)
                 .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
         views.setOnClickPendingIntent(R.id.gauge, PendingIntent.getActivity(context, id, settings,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
         manager.updateAppWidget(id, views);
+        renderedWidgets.add(id);
     }
 
     @Override public void onDeleted(Context context, int[] ids) {
-        for (int id : ids) context.deleteSharedPreferences("gauge" + id);
+        for (int id : ids) {
+            renderedWidgets.remove(id);
+            context.deleteSharedPreferences("gauge" + id);
+        }
     }
 }

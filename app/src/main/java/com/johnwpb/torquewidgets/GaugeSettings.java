@@ -47,6 +47,11 @@ public class GaugeSettings extends Activity {
         super.onCreate(state);
         id = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
         setResult(RESULT_CANCELED);
+        if (id == AppWidgetManager.INVALID_APPWIDGET_ID
+                && AppWidgetManager.ACTION_APPWIDGET_CONFIGURE.equals(getIntent().getAction())) {
+            int[] widgets = widgetIds();
+            if (widgets.length == 1) id = widgets[0];
+        }
         if (id == AppWidgetManager.INVALID_APPWIDGET_ID || !ownsWidget(id)) return;
         prefs = CoolantWidget.prefs(this, id);
         config = new GaugeConfig(prefs);
@@ -122,10 +127,10 @@ public class GaugeSettings extends Activity {
         });
 
         label(panel, "Gauge");
-        configField(panel, "Gauge title", "Name", "Coolant");
-        configField(panel, "Torque PID", "PID", "05");
-        configField(panel, "Minimum", "Minimum", "0");
-        configField(panel, "Maximum", "Maximum", "260");
+        configField(panel, "Gauge title", "Name", config.gaugeDefault("Name"));
+        configField(panel, "Torque PID", "PID", config.gaugeDefault("PID"));
+        configField(panel, "Minimum", "Minimum", config.gaugeDefault("Minimum"));
+        configField(panel, "Maximum", "Maximum", config.gaugeDefault("Maximum"));
         String[] layouts = config.layout() == 2
                 ? new String[]{"Circular", "Rectangular", "Semicircular"}
                 : new String[]{"Circular", "Rectangular"};
@@ -143,9 +148,9 @@ public class GaugeSettings extends Activity {
                 "Celsius (Torque PID reports °C)", "Fahrenheit (Torque PID reports °C)"},
                 config.integer("temperature", 0), this::changeTemperature);
         panel.addView(conversion);
-        configField(conversion, "Units", "Units", "°F");
-        configField(conversion, "Multiplier", "Multiplier", "1.8");
-        configField(conversion, "Offset", "Offset", "32");
+        configField(conversion, "Units", "Units", config.gaugeDefault("Units"));
+        configField(conversion, "Multiplier", "Multiplier", config.gaugeDefault("Multiplier"));
+        configField(conversion, "Offset", "Offset", config.gaugeDefault("Offset"));
         conversion.setVisibility(config.integer("temperature", 0) == 0 ? View.VISIBLE : View.GONE);
 
         LinearLayout actions = new LinearLayout(this);
@@ -183,14 +188,18 @@ public class GaugeSettings extends Activity {
         return CoolantWidget.ownsWidget(this, AppWidgetManager.getInstance(this), widgetId);
     }
 
+    private int[] widgetIds() {
+        return AppWidgetManager.getInstance(this)
+                .getAppWidgetIds(new ComponentName(this, CoolantWidget.class));
+    }
+
     private void showWidgetList() {
         ScrollView list = new ScrollView(this);
         LinearLayout items = column();
         items.setPadding(dp(16), dp(16), dp(16), dp(16));
         list.addView(items);
         label(items, "Torque Widgets");
-        int[] widgets = AppWidgetManager.getInstance(this)
-                .getAppWidgetIds(new ComponentName(this, CoolantWidget.class));
+        int[] widgets = widgetIds();
         if (widgets.length == 0) label(items, "Add a gauge from your home screen’s widget picker.");
         else {
             Button live = button(items, TorqueLiveService.running ? "Stop live updates" : "Start live updates",
@@ -208,7 +217,7 @@ public class GaugeSettings extends Activity {
         }
         for (int widget : widgets) {
             GaugeConfig placed = new GaugeConfig(CoolantWidget.prefs(this, widget));
-            button(items, placed.string("Name", "Coolant") + " · " + placed.units() + " · #" + widget,
+            button(items, placed.name() + " · " + placed.units() + " · #" + widget,
                     () -> startActivity(new Intent(this, GaugeSettings.class)
                             .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widget)));
         }
@@ -351,7 +360,7 @@ public class GaugeSettings extends Activity {
         }
         config.save(prefs);
         if (AppWidgetManager.ACTION_APPWIDGET_CONFIGURE.equals(getIntent().getAction())) {
-            CoolantWidget.render(this, AppWidgetManager.getInstance(this), id, config, Float.NaN);
+            CoolantWidget.renderInitial(this, AppWidgetManager.getInstance(this), id, config);
         }
         setResult(RESULT_OK, new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id));
         sendBroadcast(new Intent(this, CoolantWidget.class)
@@ -365,7 +374,7 @@ public class GaugeSettings extends Activity {
         if (!config.values.containsKey("Minimum")) min = config.minimum();
         if (!config.values.containsKey("Maximum")) max = config.maximum();
         if (!Float.isFinite(max - min) || max <= min) return "Enter a valid minimum and a greater maximum.";
-        if (config.string("PID", "05").trim().isEmpty()) return "Enter a Torque PID.";
+        if (config.pid().isEmpty()) return "Enter a Torque PID.";
         if (config.integer("temperature", 0) == 0) {
             for (String key : new String[]{"Multiplier", "Offset"}) {
                 if (config.values.containsKey(key) && !Float.isFinite(config.number(key, Float.NaN))) {

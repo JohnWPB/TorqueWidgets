@@ -111,7 +111,7 @@ public final class TorqueLiveService extends Service {
             Map<String, Float> pids = new HashMap<>();
             for (int id : ids) {
                 GaugeConfig config = new GaugeConfig(CoolantWidget.prefs(this, id));
-                String pid = config.string("PID", "05").trim();
+                String pid = config.pid();
                 float raw = pids.computeIfAbsent(pid, key -> CoolantWidget.read(service, config));
                 readings.put(id, new Reading(config, config.convert(raw)));
             }

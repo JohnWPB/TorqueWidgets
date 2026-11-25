@@ -53,7 +53,7 @@ final class GaugeRenderer {
                 info || circle ? 378 : rectangular ? 470 : 555, info || !circle ? 150 : 105, true));
         labels.add(new Label("units", "Units", config.units(), 400,
                 info || circle ? 468 : rectangular ? 560 : 653, 48, true));
-        labels.add(new Label("title", "Gauge title", config.string("Name", "Coolant"), 400,
+        labels.add(new Label("title", "Gauge title", config.name(), 400,
                 info || circle ? 535 : rectangular ? 630 : 725, 32, true));
         labels.add(new Label("min", "Minimum value", number(min), 120, 690, 29, true));
         labels.add(new Label("max", "Maximum value", number(max), 680, 690, 29, true));
