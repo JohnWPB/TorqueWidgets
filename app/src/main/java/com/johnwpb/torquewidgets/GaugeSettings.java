@@ -206,8 +206,6 @@ public class GaugeSettings extends Activity {
   row.addView(caption, new LinearLayout.LayoutParams(0, -2, 1));
   TextView font = text("Font:", 12, MUTED, false);
   row.addView(font);
-  Spinner size = new Spinner(this);
-  size.setContentDescription(caption.getText() + " font size");
   int[] sizes = {0, 16, 20, 24, 28, 32, 36, 42, 48, 56, 64, 80, 96, 112, 128, 150, 175, 200};
   String[] options = new String[sizes.length];
   int selected = 0;
@@ -216,16 +214,12 @@ public class GaugeSettings extends Activity {
    options[i] = sizes[i] == 0 ? "Default" : Integer.toString(sizes[i]);
    if (sizes[i] == prefs.getInt(key, 0)) selected = i;
   }
-  size.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, options));
-  size.setMinimumHeight(dp(44));
-  row.addView(size, new LinearLayout.LayoutParams(dp(74), -2));
-  size.setSelection(selected);
-  size.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-   public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) {
-    previewSetting(key, sizes[index]);
-   }
-   public void onNothingSelected(AdapterView<?> parent) {}
-  });
+  Spinner size = compactDropdown(options, selected, 12, index -> previewSetting(key, sizes[index]));
+  size.setContentDescription(caption.getText() + " font size");
+  LinearLayout.LayoutParams sizeLayout = new LinearLayout.LayoutParams(-2, -2);
+  sizeLayout.leftMargin = dp(4);
+  sizeLayout.rightMargin = dp(4);
+  row.addView(size, sizeLayout);
   Switch visible = new Switch(this);
   styleSwitch(visible);
   visible.setContentDescription("Show " + caption.getText());
@@ -289,23 +283,13 @@ public class GaugeSettings extends Activity {
   sizeRow("No data", "noData");
 
   startSection("Gauge");
-  dropdown("Gauge style", new String[]{"Semicircular", "Circular"},
+  dropdown("Gauge style", new String[]{"Rectangular", "Circular"},
           prefs.getBoolean("circle", false) ? 1 : 0, index -> previewSetting("circle", index == 1));
   toggle("showTicks", "Show tick marks", true);
   indicatorNumbers = scaleSwitch("Show indicator numbers");
   toggle("info", "Information only", false);
-  section.addView(text("Indicator style", 14, TEXT, true));
-  Spinner style = new Spinner(this);
-  style.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
-          new String[]{"Illuminated segments", "Sweeping needle", "Continuous arc", "None"}));
-  style.setSelection(prefs.getInt("style", 0));
-  section.addView(style, new LinearLayout.LayoutParams(-1, dp(48)));
-  style.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-   public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) {
-    previewSetting("style", index);
-   }
-   public void onNothingSelected(AdapterView<?> parent) {}
-  });
+  dropdown("Indicator style", new String[]{"Illuminated segments", "Sweeping needle", "Continuous arc", "None"},
+          prefs.getInt("style", 0), index -> previewSetting("style", index));
   startSection("Colors");
   for (String key : new String[]{"Font color", "Tick color", "Indicator color", "Needle color"}) {
    field(key, "#84D5FF");
@@ -355,18 +339,49 @@ public class GaugeSettings extends Activity {
  private void dropdown(String title, String[] choices, int selected, java.util.function.IntConsumer change) {
   TextView caption = text(title, 14, TEXT, true);
   section.addView(caption);
-  Spinner menu = new Spinner(this);
+  Spinner menu = compactDropdown(choices, selected, 14, change);
   menu.setId(View.generateViewId());
   caption.setLabelFor(menu.getId());
-  menu.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, choices));
-  menu.setSelection(selected);
-  section.addView(menu, new LinearLayout.LayoutParams(-1, dp(48)));
+  LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-2, -2);
+  layout.topMargin = dp(4);
+  layout.bottomMargin = dp(5);
+  section.addView(menu, layout);
+ }
+
+ private Spinner compactDropdown(String[] choices, int selected, int textSize,
+                                 java.util.function.IntConsumer change) {
+  int gray = 0xff34373d;
+  Spinner menu = new Spinner(this, Spinner.MODE_DROPDOWN);
+  menu.setBackground(new RippleDrawable(ColorStateList.valueOf(0x24ffffff), surface(gray, 8), null));
+  menu.setPopupBackgroundDrawable(surface(gray, 8));
+  menu.setPadding(dp(7), 0, dp(7), 0);
+  menu.setMinimumHeight(dp(44));
+  menu.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, choices) {
+   @Override public View getView(int position, View convertView, android.view.ViewGroup parent) {
+    TextView value = convertView instanceof TextView ? (TextView) convertView : text("", textSize, TEXT, false);
+    value.setText(choices[position] + " ▾");
+    value.setContentDescription(choices[position]);
+    value.setSingleLine(true);
+    value.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+    value.setMinHeight(dp(44));
+    return value;
+   }
+
+   @Override public View getDropDownView(int position, View convertView, android.view.ViewGroup parent) {
+    TextView option = (TextView) super.getDropDownView(position, convertView, parent);
+    option.setTextColor(TEXT);
+    option.setMinHeight(dp(44));
+    return option;
+   }
+  });
+  menu.setSelection(Math.max(0, Math.min(choices.length - 1, selected)));
   menu.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
    public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) {
     change.accept(index);
    }
    public void onNothingSelected(AdapterView<?> parent) {}
   });
+  return menu;
  }
 
  private Switch scaleSwitch(String title) {
