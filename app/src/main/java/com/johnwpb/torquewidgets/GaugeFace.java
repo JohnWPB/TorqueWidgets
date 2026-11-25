@@ -6,6 +6,7 @@ import android.graphics.Paint;
 import android.graphics.Typeface;
 import java.util.Map;
 
+// Preview-only drawing so settings changes cannot affect the launcher's widget update path.
 final class GaugeFace {
     static final int SIZE = 800;
     static final int BLUE = 0xff84d5ff;
@@ -44,19 +45,13 @@ final class GaugeFace {
         paint.setTypeface(TYPEFACE);
         if (!info) drawScale(canvas, paint, settings, value, min, max, circle, font);
         paint.setColor(font);
-        String reading = valid ? text(settings, "Reading format", "{value}")
-                .replace("{value}", Integer.toString(Math.round(value)))
-                : text(settings, "Missing reading", "--");
-        label(canvas, paint, settings, "Reading size", reading, 400,
-                info ? 420 : circle ? 425 : 610, info || !circle ? 150 : 105, 780);
-        label(canvas, paint, settings, "Units size", text(settings, "Units", "°F"),
-                400, info ? 490 : circle ? 485 : 670, 48, 780);
-        label(canvas, paint, settings, "Title size", text(settings, "Name", "Coolant"),
-                400, info ? 550 : circle ? 545 : 735, 32, 780);
-        if (!valid) {
-            label(canvas, paint, settings, "No data size", text(settings, "No data text", "NO DATA"),
-                    400, circle ? 580 : 770, 23, 780);
-        }
+        paint.setTextSize(info || !circle ? 150 : 105);
+        canvas.drawText(valid ? Integer.toString(Math.round(value)) : "--", 400,
+                info ? 420 : circle ? 425 : 610, paint);
+        paint.setTextSize(48);
+        canvas.drawText(text(settings, "Units", "°F"), 400, info ? 490 : circle ? 485 : 670, paint);
+        paint.setTextSize(32);
+        canvas.drawText(text(settings, "Name", "Coolant"), 400, info ? 550 : circle ? 545 : 735, paint);
     }
 
     private static void drawScale(Canvas canvas, Paint paint, Map<String, ?> settings, float value,
@@ -75,9 +70,10 @@ final class GaugeFace {
             line(canvas, paint, y, angle, major ? 270 : 285, 310);
             if (major) {
                 paint.setColor(font);
-                label(canvas, paint, settings, "Scale size", Integer.toString(Math.round(min + range * i / 40)),
+                paint.setTextSize(30);
+                canvas.drawText(Integer.toString(Math.round(min + range * i / 40)),
                         400 + (float) Math.cos(angle) * 350,
-                        y + (float) Math.sin(angle) * 350 + 10, 30, 100);
+                        y + (float) Math.sin(angle) * 350 + 10, paint);
             }
         }
         Object style = settings.get("style");
@@ -106,15 +102,6 @@ final class GaugeFace {
             default:
                 break;
         }
-    }
-
-    private static void label(Canvas canvas, Paint paint, Map<String, ?> settings, String key,
-                              String text, float x, float y, float fallback, float maxWidth) {
-        paint.setTextSize(Math.max(1, Math.min(300, number(settings, key, fallback))));
-        float width = paint.measureText(text);
-        if (width > maxWidth) paint.setTextSize(paint.getTextSize() * maxWidth / width);
-        float baseline = Math.min(SIZE - paint.descent(), Math.max(-paint.ascent(), y));
-        canvas.drawText(text, x, baseline, paint);
     }
 
     private static void line(Canvas canvas, Paint paint, float y, double angle, float inner, float outer) {
