@@ -35,7 +35,9 @@ final class GaugeFace {
     }
 
     static void draw(Canvas canvas, Map<String, ?> settings, float value, GaugeLabels.HitAreas hits) {
-        float min = number(settings, "Minimum", 0), max = number(settings, "Maximum", 260);
+        GpsMetric metric = GpsMetric.selected(settings);
+        float min = metric == null ? number(settings, "Minimum", 0) : metric.min;
+        float max = metric == null ? number(settings, "Maximum", 260) : metric.max;
         int font = color(settings, "Font color", BLUE);
         boolean circle = Boolean.TRUE.equals(settings.get("circle"));
         boolean info = Boolean.TRUE.equals(settings.get("info"));
@@ -46,11 +48,11 @@ final class GaugeFace {
         if (!info) drawScale(canvas, paint, settings, value, min, max, circle, font, hits);
         paint.setColor(font);
         GaugeLabels.draw(canvas, paint, settings, hits, "reading",
-                valid ? Integer.toString(Math.round(value)) : "--", 400,
+                GpsMetric.reading(metric, value), 400,
                 info ? 420 : circle ? 425 : 610, info || !circle ? 150 : 105);
-        GaugeLabels.draw(canvas, paint, settings, hits, "units", text(settings, "Units", "°F"),
+        GaugeLabels.draw(canvas, paint, settings, hits, "units", metric == null ? text(settings, "Units", "°F") : metric.units,
                 400, info ? 490 : circle ? 485 : 670, 48);
-        GaugeLabels.draw(canvas, paint, settings, hits, "title", text(settings, "Name", "Coolant"),
+        GaugeLabels.draw(canvas, paint, settings, hits, "title", GpsMetric.title(metric, text(settings, "Name", "Coolant")),
                 400, info ? 550 : circle ? 545 : 735, 32);
         if (!valid) GaugeLabels.draw(canvas, paint, settings, hits, "noData", "NO DATA",
                 400, circle ? 580 : 770, 23);

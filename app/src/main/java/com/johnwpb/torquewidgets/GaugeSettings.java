@@ -31,6 +31,10 @@ public class GaugeSettings extends Activity {
  private Switch indicatorNumbers, scaleNumbers;
  private Button removeBackground;
  private boolean backgroundChanged;
+ private Switch editImage;
+ private Button fitImage, locationAccess;
+ private LinearLayout gpsControls, pidControls;
+ private static final int LOCATION_PERMISSION = 802;
 
  private void watch(EditText field, java.util.function.Consumer<String> change) {
   field.addTextChangedListener(new android.text.TextWatcher() {
@@ -154,6 +158,21 @@ public class GaugeSettings extends Activity {
   removeBackground.setVisibility(preview.backgroundImage == null ? View.GONE : View.VISIBLE);
   removeBackground.setOnClickListener(view -> setBackgroundImage(null));
   right.addView(removeBackground, new LinearLayout.LayoutParams(-1, -2));
+  editImage = new Switch(this);
+  editImage.setText("Edit image");
+  styleSwitch(editImage);
+  editImage.setOnCheckedChangeListener((button, checked) -> {
+   preview.editBackground = checked;
+   preview.invalidate();
+  });
+  right.addView(editImage);
+  fitImage = action("Fit image", false);
+  fitImage.setOnClickListener(view -> {
+   resetImagePosition();
+   preview.invalidate();
+  });
+  right.addView(fitImage, new LinearLayout.LayoutParams(-1, -2));
+  updateImageButtons();
   LinearLayout.LayoutParams previewLayout = new LinearLayout.LayoutParams(0, -1, 1);
   previewLayout.setMargins(dp(6), 0, dp(12), dp(8));
   columns.addView(right, previewLayout);
@@ -291,12 +310,34 @@ public class GaugeSettings extends Activity {
   for (String key : new String[]{"Font color", "Tick color", "Indicator color", "Needle color"}) {
    field(key, "#84D5FF");
   }
-  startSection("Torque data");
+  startSection("Information provider");
+  boolean useGps = GpsMetric.selected(previewSettings) != null;
+  dropdown("Information provider", new String[]{"PID", "GPS information"}, useGps ? 1 : 0, index -> {
+   previewSetting("gpsProvider", index == 1);
+   updateProvider();
+  });
+  LinearLayout provider = section;
+  pidControls = column();
+  provider.addView(pidControls);
+  section = pidControls;
   field("PID", "05");
   field("Minimum", "0");
   field("Maximum", "260");
   field("Multiplier", "1.8");
   field("Offset", "32");
+  gpsControls = column();
+  provider.addView(gpsControls);
+  section = gpsControls;
+  GpsMetric[] metrics = GpsMetric.values();
+  String[] choices = new String[metrics.length];
+  for (int i = 0; i < metrics.length; i++) choices[i] = metrics[i].label;
+  GpsMetric selected = GpsMetric.configured(previewSettings);
+  dropdown("GPS information", choices, selected.ordinal(),
+          index -> previewSetting("gpsMetric", metrics[index].name()));
+  locationAccess = action("Allow GPS access", false);
+  locationAccess.setOnClickListener(view -> requestGpsAccess());
+  gpsControls.addView(locationAccess);
+  updateProvider();
   startSection("Scale numbers");
   scaleNumbers = scaleSwitch("Show all scale numbers");
   for (int i = 0; i < 9; i++) sizeRow("Number " + (i + 1), "scale" + i);
@@ -349,15 +390,69 @@ public class GaugeSettings extends Activity {
   try {
    setBackgroundImage(GaugeBackground.open(getContentResolver(), data.getData()));
   } catch (IOException | SecurityException e) {
-   Toast.makeText(this, "Choose a readable 800 × 800 image.", Toast.LENGTH_LONG).show();
+   Toast.makeText(this, "Choose a readable image.", Toast.LENGTH_LONG).show();
   }
  }
 
  private void setBackgroundImage(Bitmap image) {
   preview.backgroundImage = image;
   backgroundChanged = true;
-  removeBackground.setVisibility(image == null ? View.GONE : View.VISIBLE);
+  resetImagePosition();
+  updateImageButtons();
+  editImage.setChecked(image != null);
   preview.invalidate();
+ }
+
+ private void resetImagePosition() {
+  for (String key : new String[]{"imageLeft", "imageTop", "imageWidth"}) previewSettings.remove(key);
+ }
+
+ private void updateImageButtons() {
+  int visibility = preview.backgroundImage == null ? View.GONE : View.VISIBLE;
+  removeBackground.setVisibility(visibility);
+  editImage.setVisibility(visibility);
+  fitImage.setVisibility(visibility);
+ }
+
+ private boolean locationGranted(String permission) {
+  return checkSelfPermission(permission) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+ }
+
+ private void updateProvider() {
+  if (gpsControls == null || locationAccess == null) return;
+  boolean gps = GpsMetric.selected(previewSettings) != null;
+  gpsControls.setVisibility(gps ? View.VISIBLE : View.GONE);
+  pidControls.setVisibility(gps ? View.GONE : View.VISIBLE);
+  boolean fine = locationGranted(android.Manifest.permission.ACCESS_FINE_LOCATION);
+  boolean background = Build.VERSION.SDK_INT < 29
+          || locationGranted(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION);
+  locationAccess.setVisibility(fine && background ? View.GONE : View.VISIBLE);
+  locationAccess.setText(fine ? "Allow GPS on home screen" : "Allow precise GPS");
+ }
+
+ @Override protected void onResume() {
+  super.onResume();
+  updateProvider();
+ }
+
+ @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+  super.onRequestPermissionsResult(requestCode, permissions, results);
+  if (requestCode == LOCATION_PERMISSION) updateProvider();
+ }
+
+ private void requestGpsAccess() {
+  if (!locationGranted(android.Manifest.permission.ACCESS_FINE_LOCATION)) {
+   requestPermissions(new String[]{android.Manifest.permission.ACCESS_FINE_LOCATION,
+           android.Manifest.permission.ACCESS_COARSE_LOCATION}, LOCATION_PERMISSION);
+   return;
+  }
+  new AlertDialog.Builder(this).setTitle("GPS on the home screen")
+          .setMessage("In app permissions, open Location and choose Allow all the time for home-screen GPS readings.")
+          .setNegativeButton("Cancel", null)
+          .setPositiveButton("Open settings", (dialog, which) -> startActivity(new Intent(
+                  android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                  android.net.Uri.fromParts("package", getPackageName(), null))))
+          .show();
  }
 
  private void toggle(String key, String title, boolean fallback) {
@@ -377,7 +472,7 @@ public class GaugeSettings extends Activity {
           && Float.isFinite(GaugeFace.number(previewSettings, "Multiplier", Float.NaN))
           && Float.isFinite(GaugeFace.number(previewSettings, "Offset", Float.NaN))
           && !GaugeFace.text(previewSettings, "PID", "").trim().isEmpty();
-  if (!valid) {
+  if (GpsMetric.selected(previewSettings) == null && !valid) {
    Toast.makeText(this, "Check the range, conversion and Torque PID.", Toast.LENGTH_LONG).show();
    return;
   }
@@ -398,6 +493,9 @@ public class GaugeSettings extends Activity {
    }
   }
   SharedPreferences.Editor editor = prefs.edit();
+  for (String key : new String[]{"imageLeft", "imageTop", "imageWidth"}) {
+   if (!previewSettings.containsKey(key)) editor.remove(key);
+  }
   for (Map.Entry<String, Object> entry : previewSettings.entrySet()) {
    String key = entry.getKey();
    Object value = entry.getValue();

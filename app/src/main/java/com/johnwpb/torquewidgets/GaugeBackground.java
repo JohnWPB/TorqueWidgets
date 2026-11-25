@@ -5,7 +5,8 @@ import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
-import android.graphics.Rect;
+import android.graphics.RectF;
+import java.util.Map;
 import android.net.Uri;
 import android.util.AtomicFile;
 import java.io.File;
@@ -24,14 +25,14 @@ final class GaugeBackground {
         try (InputStream input = resolver.openInputStream(uri)) {
             BitmapFactory.decodeStream(input, null, options);
         }
-        if (options.outWidth != GaugeFace.SIZE || options.outHeight != GaugeFace.SIZE) {
-            throw new IOException("Image must be 800 × 800 pixels");
-        }
+        if (options.outWidth < 1 || options.outHeight < 1) throw new IOException("Unsupported image");
+        BitmapFactory.Options decode = new BitmapFactory.Options();
+        decode.inSampleSize = 1;
+        int largest = Math.max(options.outWidth, options.outHeight);
+        while (largest / decode.inSampleSize > 2400) decode.inSampleSize *= 2;
         try (InputStream input = resolver.openInputStream(uri)) {
-            Bitmap image = BitmapFactory.decodeStream(input);
-            if (image == null || image.getWidth() != GaugeFace.SIZE || image.getHeight() != GaugeFace.SIZE) {
-                throw new IOException("Invalid background image");
-            }
+            Bitmap image = BitmapFactory.decodeStream(input, null, decode);
+            if (image == null) throw new IOException("Invalid image");
             return image;
         }
     }
@@ -68,9 +69,25 @@ final class GaugeBackground {
         file(context, id).delete();
     }
 
-    static void draw(Canvas canvas, Bitmap image) {
+    static RectF bounds(Bitmap image, Map<String, ?> settings) {
+        float side = GaugeFace.SIZE;
+        float ratio = image.getWidth() / (float) image.getHeight();
+        float fitWidth = Math.min(1, ratio);
+        float width = coordinate(settings, "imageWidth", fitWidth) * side;
+        float left = coordinate(settings, "imageLeft", (1 - fitWidth) / 2) * side;
+        float top = coordinate(settings, "imageTop", (1 - Math.min(1, 1 / ratio)) / 2) * side;
+        return new RectF(left, top, left + width, top + width / ratio);
+    }
+
+    private static float coordinate(Map<String, ?> settings, String key, float fallback) {
+        Object value = settings.get(key);
+        return value instanceof Float && Float.isFinite((Float) value) ? (Float) value : fallback;
+    }
+
+    static void draw(Canvas canvas, Bitmap image, Map<String, ?> settings) {
         if (image != null) {
-            canvas.drawBitmap(image, null, new Rect(0, 0, GaugeFace.SIZE, GaugeFace.SIZE), null);
+            android.graphics.Paint paint = new android.graphics.Paint(android.graphics.Paint.FILTER_BITMAP_FLAG);
+            canvas.drawBitmap(image, null, bounds(image, settings), paint);
         }
     }
 }
