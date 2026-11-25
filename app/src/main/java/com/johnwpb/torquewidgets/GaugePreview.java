@@ -21,6 +21,8 @@ final class GaugePreview extends View {
     boolean noData;
     Bitmap backgroundImage;
     boolean editBackground;
+    boolean calibratingNeedle;
+    float calibrationAngle, calibrationValue = Float.NaN;
     private RectF startingImage;
     private int corner;
     private final Paint handles = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -39,7 +41,8 @@ final class GaugePreview extends View {
         GpsMetric metric = GpsMetric.selected(settings);
         float min = metric == null ? GaugeFace.number(settings, "Minimum", 0) : metric.min;
         float max = metric == null ? GaugeFace.number(settings, "Maximum", 260) : metric.max;
-        float sample = (float) (min + ((double) max - min) * .55);
+        float sample = calibratingNeedle && Float.isFinite(calibrationValue) ? calibrationValue
+                : (float) (min + ((double) max - min) * .55);
         labels.clear();
         canvas.save();
         canvas.translate(left, 0);
@@ -47,7 +50,8 @@ final class GaugePreview extends View {
         canvas.clipRect(0, 0, GaugeFace.SIZE, GaugeFace.SIZE);
         GaugeBackground.draw(canvas, backgroundImage, settings);
         GaugeFace.draw(canvas, settings, noData ? Float.NaN : sample,
-                (id, x, baseline, bounds) -> labels.add(new Label(id, x, baseline, bounds)));
+                calibratingNeedle ? null : (id, x, baseline, bounds) -> labels.add(new Label(id, x, baseline, bounds)),
+                calibratingNeedle ? calibrationAngle : Float.NaN);
         if (editBackground && backgroundImage != null) drawHandles(canvas);
         canvas.restore();
     }
@@ -55,6 +59,20 @@ final class GaugePreview extends View {
     @Override public boolean onTouchEvent(MotionEvent event) {
         if (scale <= 0) return false;
         float x = (event.getX() - left) / scale, y = event.getY() / scale;
+        if (calibratingNeedle) {
+            int action = event.getActionMasked();
+            if (action == MotionEvent.ACTION_DOWN || action == MotionEvent.ACTION_MOVE
+                    || action == MotionEvent.ACTION_UP) {
+                float dx = x - GaugeFace.SIZE / 2f;
+                float dy = y - NeedleCalibration.pivotY(Boolean.TRUE.equals(settings.get("circle")));
+                if (Math.hypot(dx, dy) >= 30) {
+                    calibrationAngle = NeedleCalibration.touchAngle(dx, dy);
+                    invalidate();
+                }
+                if (action == MotionEvent.ACTION_UP) performClick();
+            }
+            return true;
+        }
         if (editBackground && backgroundImage != null) return editImage(event, x, y);
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:

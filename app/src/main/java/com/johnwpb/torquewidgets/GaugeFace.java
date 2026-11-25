@@ -35,6 +35,11 @@ final class GaugeFace {
     }
 
     static void draw(Canvas canvas, Map<String, ?> settings, float value, GaugeLabels.HitAreas hits) {
+        draw(canvas, settings, value, hits, Float.NaN);
+    }
+
+    static void draw(Canvas canvas, Map<String, ?> settings, float value, GaugeLabels.HitAreas hits,
+                     float calibrationAngle) {
         GpsMetric metric = GpsMetric.selected(settings);
         float min = metric == null ? number(settings, "Minimum", 0) : metric.min;
         float max = metric == null ? number(settings, "Maximum", 260) : metric.max;
@@ -45,7 +50,7 @@ final class GaugeFace {
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(TYPEFACE);
-        if (!info) drawScale(canvas, paint, settings, value, min, max, circle, font, hits);
+        if (!info) drawScale(canvas, paint, settings, value, min, max, circle, font, hits, calibrationAngle);
         paint.setColor(font);
         GaugeLabels.draw(canvas, paint, settings, hits, "reading",
                 GpsMetric.reading(metric, value), 400,
@@ -60,8 +65,9 @@ final class GaugeFace {
     }
 
     private static void drawScale(Canvas canvas, Paint paint, Map<String, ?> settings, float value,
-                                  float min, float max, boolean circle, int font, GaugeLabels.HitAreas hits) {
-        float y = circle ? 400 : 425, start = circle ? 135 : 180, sweep = circle ? 270 : 180;
+                                  float min, float max, boolean circle, int font, GaugeLabels.HitAreas hits,
+                                  float calibrationAngle) {
+        float y = NeedleCalibration.pivotY(circle), start = circle ? 135 : 180, sweep = circle ? 270 : 180;
         int tick = color(settings, "Tick color", BLUE);
         int indicator = color(settings, "Indicator color", BLUE);
         float range = max - min;
@@ -98,7 +104,9 @@ final class GaugeFace {
                 paint.setColor(color(settings, "Needle color", indicator));
                 paint.setStrokeWidth(12);
                 paint.setStrokeCap(Paint.Cap.ROUND);
-                line(canvas, paint, y, Math.toRadians(start + sweep * fraction), 0, 260);
+                float angle = Float.isFinite(calibrationAngle) ? calibrationAngle
+                        : NeedleCalibration.angleFor(settings, value, min, max, circle, fraction);
+                line(canvas, paint, y, Math.toRadians(angle), 0, 260);
                 canvas.drawCircle(400, y, 18, paint);
                 break;
             case 2:
