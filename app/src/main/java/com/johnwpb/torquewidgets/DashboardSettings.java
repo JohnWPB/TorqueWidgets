@@ -22,7 +22,9 @@ import android.widget.Toast;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.Map;
 
 public final class DashboardSettings extends Activity {
@@ -140,49 +142,40 @@ public final class DashboardSettings extends Activity {
             toast("This dashboard is full.");
             return;
         }
-        new AlertDialog.Builder(this).setTitle("Add gauge")
-                .setItems(new String[]{"Speedometer", "Fuel gauge", "Coolant", "Use existing gauge"},
-                        (dialog, index) -> {
-                            if (index == 3) copyMenu();
-                            else addGauge(index, null);
-                        }).show();
-    }
-
-    private void copyMenu() {
-        int[] standalone = manager.getAppWidgetIds(new ComponentName(this, CoolantWidget.class));
-        List<Integer> sources = new ArrayList<>();
-        for (int id : standalone) sources.add(id);
-        for (DashboardLayout.Gauge gauge : gauges) sources.add(gauge.id);
-        if (sources.isEmpty()) {
-            toast("Add or configure a Torque gauge first.");
-            return;
+        Set<Integer> existing = new LinkedHashSet<>();
+        for (int id : manager.getAppWidgetIds(new ComponentName(this, CoolantWidget.class))) {
+            existing.add(id);
         }
-        String[] names = new String[sources.size()];
-        for (int i = 0; i < names.length; i++) names[i] = name(sources.get(i));
-        new AlertDialog.Builder(this).setTitle("Copy gauge settings")
-                .setItems(names, (dialog, index) -> addGauge(-1, sources.get(index))).show();
+        for (int id : manager.getAppWidgetIds(new ComponentName(this, DashboardWidget.class))) {
+            if (id == widgetId) continue;
+            for (DashboardLayout.Gauge gauge : DashboardLayout.read(this, id)) existing.add(gauge.id);
+        }
+        for (DashboardLayout.Gauge gauge : gauges) existing.add(gauge.id);
+        List<Integer> sources = new ArrayList<>(existing);
+        String[] choices = new String[sources.size() + 1];
+        choices[0] = "New gauge";
+        for (int i = 0; i < sources.size(); i++) choices[i + 1] = name(sources.get(i));
+        new AlertDialog.Builder(this).setTitle("Add gauge").setItems(choices, (dialog, index) -> {
+            if (index == 0) openGaugeEditor(null);
+            else copyGauge(sources.get(index - 1));
+        }).show();
     }
 
-    private void addGauge(int preset, Integer source) {
+    private void copyGauge(int source) {
         try {
             int id = DashboardLayout.newGauge(this, source);
             staged.add(id);
-            SharedPreferences.Editor config = CoolantWidget.prefs(this, id).edit();
-            if (preset == 0) {
-                config.putString("Name", "Speedometer").putString("PID", "0d").putString("Units", "mph")
-                        .putString("Maximum", "160").putString("Multiplier", "0.621371")
-                        .putString("Offset", "0").putBoolean("circle", true).putInt("style", 1).apply();
-            } else if (preset == 1) {
-                config.putString("Name", "Fuel").putString("PID", "2f").putString("Units", "%")
-                        .putString("Maximum", "100").putString("Multiplier", "1").putString("Offset", "0").apply();
-            }
-            selected = gauges.isEmpty() ? new DashboardLayout.Gauge(id, .5f, .5f, .78f)
-                    : new DashboardLayout.Gauge(id, .75f, .27f, .36f);
-            gauges.add(selected);
-            updateSelection();
+            placeGauge(id);
         } catch (IOException e) {
-            toast("Could not add the gauge.");
+            toast("Could not copy the gauge.");
         }
+    }
+
+    private void placeGauge(int id) {
+        selected = gauges.isEmpty() ? new DashboardLayout.Gauge(id, .5f, .5f, .78f)
+                : new DashboardLayout.Gauge(id, .75f, .27f, .36f);
+        gauges.add(selected);
+        updateSelection();
     }
 
     private void selectMenu() {
@@ -195,13 +188,18 @@ public final class DashboardSettings extends Activity {
     }
 
     private void editSelected() {
-        if (selected == null || editing < -1) return;
+        if (selected != null) openGaugeEditor(selected.id);
+    }
+
+    private void openGaugeEditor(Integer source) {
+        if (editing < -1) return;
         try {
-            original = selected.id;
-            editing = DashboardLayout.newGauge(this, original);
-            staged.add(editing);
+            int draft = DashboardLayout.newGauge(this, source);
+            original = source == null ? -1 : source;
+            editing = draft;
+            staged.add(draft);
             startActivityForResult(new Intent(this, DashboardGaugeSettings.class)
-                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, editing), EDIT);
+                    .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, draft), EDIT);
         } catch (IOException e) {
             toast("Could not open the gauge editor.");
         }
@@ -210,15 +208,21 @@ public final class DashboardSettings extends Activity {
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data);
         if (request != EDIT || editing >= -1) return;
-        DashboardLayout.Gauge gauge = find(original);
-        if (result == RESULT_OK && gauge != null) {
-            gauge.id = editing;
-            selected = gauge;
-        } else {
-            DashboardLayout.deleteGauge(this, editing);
-            staged.remove(Integer.valueOf(editing));
-        }
+        int draft = editing;
+        DashboardLayout.Gauge previous = find(original);
+        boolean creating = original == -1;
         editing = original = -1;
+        if (result == RESULT_OK && creating) {
+            placeGauge(draft);
+            return;
+        }
+        if (result == RESULT_OK && previous != null) {
+            previous.id = draft;
+            selected = previous;
+        } else {
+            DashboardLayout.deleteGauge(this, draft);
+            staged.remove(Integer.valueOf(draft));
+        }
         updateSelection();
     }
 
