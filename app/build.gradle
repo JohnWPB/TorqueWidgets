@@ -1,0 +1,5 @@
+plugins { id 'com.android.application' version '8.7.3' }
+android { namespace 'com.johnwpb.torquewidgets'; compileSdk 35
+ defaultConfig { applicationId 'com.johnwpb.torquewidgets'; minSdk 26; targetSdk 32; versionCode 1; versionName '1.0' }
+}
+android { buildFeatures { aidl true } }
