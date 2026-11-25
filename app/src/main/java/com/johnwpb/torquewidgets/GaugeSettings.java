@@ -214,8 +214,8 @@ public class GaugeSettings extends Activity {
    options[i] = sizes[i] == 0 ? "Default" : Integer.toString(sizes[i]);
    if (sizes[i] == prefs.getInt(key, 0)) selected = i;
   }
-  Spinner size = compactDropdown(options, selected, 12, index -> previewSetting(key, sizes[index]));
-  size.setContentDescription(caption.getText() + " font size");
+  Button size = dropdownButton(caption.getText() + " font size", options, selected, 12,
+          index -> previewSetting(key, sizes[index]));
   LinearLayout.LayoutParams sizeLayout = new LinearLayout.LayoutParams(-2, -2);
   sizeLayout.leftMargin = dp(4);
   sizeLayout.rightMargin = dp(4);
@@ -283,7 +283,7 @@ public class GaugeSettings extends Activity {
   sizeRow("No data", "noData");
 
   startSection("Gauge");
-  dropdown("Gauge style", new String[]{"Rectangular", "Circular"},
+  dropdown("Gauge style", new String[]{"Semicircular", "Circular"},
           prefs.getBoolean("circle", false) ? 1 : 0, index -> previewSetting("circle", index == 1));
   toggle("showTicks", "Show tick marks", true);
   indicatorNumbers = scaleSwitch("Show indicator numbers");
@@ -339,7 +339,7 @@ public class GaugeSettings extends Activity {
  private void dropdown(String title, String[] choices, int selected, java.util.function.IntConsumer change) {
   TextView caption = text(title, 14, TEXT, true);
   section.addView(caption);
-  Spinner menu = compactDropdown(choices, selected, 14, change);
+  Button menu = dropdownButton(title, choices, selected, 14, change);
   menu.setId(View.generateViewId());
   caption.setLabelFor(menu.getId());
   LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-2, -2);
@@ -348,40 +348,43 @@ public class GaugeSettings extends Activity {
   section.addView(menu, layout);
  }
 
- private Spinner compactDropdown(String[] choices, int selected, int textSize,
-                                 java.util.function.IntConsumer change) {
-  int gray = 0xff34373d;
-  Spinner menu = new Spinner(this, Spinner.MODE_DROPDOWN);
-  menu.setBackground(new RippleDrawable(ColorStateList.valueOf(0x24ffffff), surface(gray, 8), null));
-  menu.setPopupBackgroundDrawable(surface(gray, 8));
-  menu.setPadding(dp(7), 0, dp(7), 0);
-  menu.setMinimumHeight(dp(44));
-  menu.setAdapter(new ArrayAdapter<String>(this, android.R.layout.simple_spinner_dropdown_item, choices) {
-   @Override public View getView(int position, View convertView, android.view.ViewGroup parent) {
-    TextView value = convertView instanceof TextView ? (TextView) convertView : text("", textSize, TEXT, false);
-    value.setText(choices[position] + " ▾");
-    value.setContentDescription(choices[position]);
-    value.setSingleLine(true);
-    value.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
-    value.setMinHeight(dp(44));
-    return value;
+ private Button dropdownButton(String title, String[] choices, int selected, int textSize,
+                               java.util.function.IntConsumer change) {
+  Button button = new Button(this);
+  button.setAllCaps(false);
+  button.setTextSize(textSize);
+  button.setTextColor(TEXT);
+  button.setSingleLine(true);
+  button.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+  button.setMinWidth(0);
+  button.setMinimumWidth(0);
+  button.setMinHeight(dp(44));
+  button.setMinimumHeight(dp(44));
+  button.setPadding(dp(8), 0, dp(8), 0);
+  button.setStateListAnimator(null);
+  button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x24ffffff),
+          surface(0xff34373d, 8), null));
+  int[] selection = {Math.max(0, Math.min(choices.length - 1, selected))};
+  Runnable refresh = () -> {
+   String current = choices[selection[0]];
+   button.setText(current + " ▾");
+   button.setContentDescription(title + ", " + current);
+  };
+  refresh.run();
+  button.setOnClickListener(view -> {
+   PopupMenu popup = new PopupMenu(this, button, Gravity.START);
+   for (int i = 0; i < choices.length; i++) {
+    popup.getMenu().add(0, i, i, choices[i]).setCheckable(true).setChecked(i == selection[0]);
    }
-
-   @Override public View getDropDownView(int position, View convertView, android.view.ViewGroup parent) {
-    TextView option = (TextView) super.getDropDownView(position, convertView, parent);
-    option.setTextColor(TEXT);
-    option.setMinHeight(dp(44));
-    return option;
-   }
+   popup.setOnMenuItemClickListener(item -> {
+    selection[0] = item.getItemId();
+    refresh.run();
+    change.accept(selection[0]);
+    return true;
+   });
+   popup.show();
   });
-  menu.setSelection(Math.max(0, Math.min(choices.length - 1, selected)));
-  menu.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-   public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) {
-    change.accept(index);
-   }
-   public void onNothingSelected(AdapterView<?> parent) {}
-  });
-  return menu;
+  return button;
  }
 
  private Switch scaleSwitch(String title) {
