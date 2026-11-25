@@ -18,7 +18,7 @@ final class GaugeConfig {
     GaugeConfig(SharedPreferences preferences) {
         original = preferences.getAll();
         values = new HashMap<>(original);
-        speedDefaults = original.isEmpty() || flag("speedDefaults", false);
+        speedDefaults = flag("speedDefaults", false);
     }
 
     private static Map<String, String> defaults(String name, String pid, String maximum,

@@ -7,6 +7,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:scaleType="fitCenter"
+        android:src="@drawable/coolant_placeholder"
         android:contentDescription="Vehicle gauge" />
 
     <TextView
@@ -14,7 +15,8 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
-        android:text="NO DATA"
+        android:paddingTop="42dp"
+        android:text="— °F&#10;Coolant · NO DATA"
         android:textColor="#84D5FF"
-        android:textSize="14sp" />
+        android:textSize="12sp" />
 </FrameLayout>

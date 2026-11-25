@@ -46,9 +46,9 @@ public class GaugeSettings extends Activity {
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         id = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
-        setResult(RESULT_CANCELED);
+        setResult(RESULT_CANCELED, new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id));
         if (id == AppWidgetManager.INVALID_APPWIDGET_ID
-                && AppWidgetManager.ACTION_APPWIDGET_CONFIGURE.equals(getIntent().getAction())) {
+                && isLauncherConfiguration()) {
             int[] widgets = widgetIds();
             if (widgets.length == 1) id = widgets[0];
         }
@@ -182,6 +182,11 @@ public class GaugeSettings extends Activity {
     @Override protected void onResume() {
         super.onResume();
         if (config == null) showWidgetList();
+    }
+
+    private boolean isLauncherConfiguration() {
+        return this instanceof WidgetConfiguration
+                || AppWidgetManager.ACTION_APPWIDGET_CONFIGURE.equals(getIntent().getAction());
     }
 
     private boolean ownsWidget(int widgetId) {
@@ -359,7 +364,7 @@ public class GaugeSettings extends Activity {
             return;
         }
         config.save(prefs);
-        if (AppWidgetManager.ACTION_APPWIDGET_CONFIGURE.equals(getIntent().getAction())) {
+        if (isLauncherConfiguration()) {
             CoolantWidget.renderInitial(this, AppWidgetManager.getInstance(this), id, config);
         }
         setResult(RESULT_OK, new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id));
