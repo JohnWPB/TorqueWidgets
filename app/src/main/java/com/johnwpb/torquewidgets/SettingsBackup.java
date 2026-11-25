@@ -28,7 +28,7 @@ import java.util.zip.ZipOutputStream;
 
 final class SettingsBackup implements AutoCloseable {
     private static final int MAX_IMAGE = 24 * 1024 * 1024;
-    private static final Pattern LABEL = Pattern.compile("label\\.(title|reading|units|noData|scale[0-8])\\.(visible|size|x|y)");
+    private static final Pattern LABEL = Pattern.compile("label\\.(title|reading|units|noData|scale[0-8])\\.(visible|size|x|y|color)");
     private static final Pattern IMAGE = Pattern.compile("image-([0-9]+)\\.png");
     final boolean dashboard;
     final List<Profile> profiles;
@@ -207,20 +207,20 @@ final class SettingsBackup implements AutoCloseable {
                     break;
                 case "Name": case "PID": case "Units": case "gpsMetric":
                 case "Minimum": case "Maximum": case "Multiplier": case "Offset":
-                case "Font color": case "Tick color": case "Indicator color": case "Needle color":
+                case "Font color": case "Tick color": case "Indicator color": case "Needle color": case "Scale color":
                     if (!(value instanceof String) || ((String) value).length() > 4096) {
                         throw new IOException("Invalid gauge text setting");
                     }
-                    if (key.endsWith("color")) {
-                        try { Color.parseColor((String) value); }
-                        catch (IllegalArgumentException e) { throw new IOException("Invalid color", e); }
-                    }
+                    if (key.endsWith("color")) validateColor(value);
                     settings.put(key, value);
                     break;
                 default:
                     if (!label) break;
                     if (key.endsWith(".visible")) {
                         if (!(value instanceof Boolean)) throw new IOException("Invalid label visibility");
+                        settings.put(key, value);
+                    } else if (key.endsWith(".color")) {
+                        validateColor(value);
                         settings.put(key, value);
                     } else if (key.endsWith(".size")) settings.put(key, integer(value, 0, 200));
                     else settings.put(key, decimal(value, 0, 1));
@@ -236,6 +236,15 @@ final class SettingsBackup implements AutoCloseable {
             throw new IOException("Invalid gauge range or data settings");
         }
         return settings;
+    }
+
+    private static void validateColor(Object value) throws IOException {
+        if (!(value instanceof String)) throw new IOException("Invalid color");
+        try {
+            Color.parseColor((String) value);
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Invalid color", e);
+        }
     }
 
     private static float decimal(Object value, float lower, float upper) throws IOException {
