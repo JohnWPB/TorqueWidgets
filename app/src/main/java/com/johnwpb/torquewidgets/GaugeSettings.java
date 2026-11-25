@@ -180,11 +180,7 @@ public class GaugeSettings extends Activity {
     }
 
     private boolean ownsWidget(int widgetId) {
-        for (int placed : AppWidgetManager.getInstance(this)
-                .getAppWidgetIds(new ComponentName(this, CoolantWidget.class))) {
-            if (placed == widgetId) return true;
-        }
-        return false;
+        return CoolantWidget.ownsWidget(this, AppWidgetManager.getInstance(this), widgetId);
     }
 
     private void showWidgetList() {
@@ -354,6 +350,9 @@ public class GaugeSettings extends Activity {
             return;
         }
         config.save(prefs);
+        if (AppWidgetManager.ACTION_APPWIDGET_CONFIGURE.equals(getIntent().getAction())) {
+            CoolantWidget.render(this, AppWidgetManager.getInstance(this), id, config, Float.NaN);
+        }
         setResult(RESULT_OK, new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id));
         sendBroadcast(new Intent(this, CoolantWidget.class)
                 .setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE)

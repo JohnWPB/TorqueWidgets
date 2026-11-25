@@ -3,6 +3,7 @@ package com.johnwpb.torquewidgets;
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProvider;
+import android.appwidget.AppWidgetProviderInfo;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -13,12 +14,18 @@ import android.graphics.Canvas;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.view.View;
 import android.widget.RemoteViews;
 import org.prowl.torque.remote.ITorqueService;
 
 public class CoolantWidget extends AppWidgetProvider {
     static SharedPreferences prefs(Context context, int id) {
         return context.getSharedPreferences("gauge" + id, Context.MODE_PRIVATE);
+    }
+
+    static boolean ownsWidget(Context context, AppWidgetManager manager, int id) {
+        AppWidgetProviderInfo info = manager.getAppWidgetInfo(id);
+        return info != null && new ComponentName(context, CoolantWidget.class).equals(info.provider);
     }
 
     @Override public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
@@ -36,10 +43,8 @@ public class CoolantWidget extends AppWidgetProvider {
                 done = true;
                 handler.removeCallbacks(timeout);
                 try {
-                    ComponentName provider = new ComponentName(app, CoolantWidget.class);
                     for (int i = 0; i < ids.length; i++) {
-                        android.appwidget.AppWidgetProviderInfo info = manager.getAppWidgetInfo(ids[i]);
-                        if (TorqueLiveService.running || info == null || !provider.equals(info.provider)) continue;
+                        if (TorqueLiveService.running || !ownsWidget(app, manager, ids[i])) continue;
                         GaugeConfig config = new GaugeConfig(prefs(app, ids[i]));
                         float value = Float.NaN;
                         if (readings != null && config.string("PID", "05")
@@ -103,6 +108,7 @@ public class CoolantWidget extends AppWidgetProvider {
         GaugeRenderer.draw(new Canvas(bitmap), config, value, GaugeRenderer.labels(config, value), null);
         RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.gauge);
         views.setImageViewBitmap(R.id.gauge, bitmap);
+        views.setViewVisibility(R.id.gauge_placeholder, View.GONE);
         views.setContentDescription(R.id.gauge, config.string("Name", "Coolant") + " "
                 + (Float.isFinite(value) ? GaugeRenderer.number(value) + " " + config.units() : "NO DATA"));
         Intent settings = new Intent(context, GaugeSettings.class)
