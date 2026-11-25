@@ -17,6 +17,7 @@ final class GaugeLabels {
 
     static void draw(Canvas canvas, Paint paint, Map<String, ?> settings, HitAreas hits,
                      String id, String text, float x, float baseline, int size) {
+        if (Boolean.FALSE.equals(settings.get(key(id, "visible")))) return;
         Object chosen = settings.get(key(id, "size"));
         if (chosen instanceof Integer && (Integer) chosen > 0) size = (Integer) chosen;
         paint.setTextSize(size);

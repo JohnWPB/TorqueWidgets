@@ -1,10 +1,24 @@
 package com.johnwpb.torquewidgets;
+import android.content.res.ColorStateList;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
+import android.view.Gravity;
 import android.view.View;
 import java.util.HashMap;
 import java.util.Map;
 import android.app.*;import android.appwidget.*;import android.os.*;import android.content.*;import android.widget.*;
 public class GaugeSettings extends Activity {
- int id; SharedPreferences prefs; LinearLayout panel;
+ private static final int PAGE = 0xff10161f;
+ private static final int SURFACE = 0xff182332;
+ private static final int CONTROL = 0xff243346;
+ private static final int BORDER = 0xff34475c;
+ private static final int TEXT = 0xffedf5ff;
+ private static final int MUTED = 0xffabc0d7;
+ private static final int ACCENT = 0xff84d5ff;
+ private int id;
+ private SharedPreferences prefs;
+ private LinearLayout panel, section, footer;
  private final Map<String, Object> previewSettings = new HashMap<>();
  private ScrollView scroll;
  private LinearLayout picker;
@@ -25,29 +39,96 @@ public class GaugeSettings extends Activity {
   preview.invalidate();
  }
 
+ private int dp(int size) {
+  return Math.round(size * getResources().getDisplayMetrics().density);
+ }
+
+ private LinearLayout column() {
+  LinearLayout view = new LinearLayout(this);
+  view.setOrientation(LinearLayout.VERTICAL);
+  return view;
+ }
+
+ private GradientDrawable surface(int color, int radius) {
+  GradientDrawable background = new GradientDrawable();
+  background.setColor(color);
+  background.setCornerRadius(dp(radius));
+  if (color == SURFACE || color == CONTROL) background.setStroke(dp(1), BORDER);
+  return background;
+ }
+
+ private TextView text(String value, int size, int color, boolean heading) {
+  TextView view = new TextView(this);
+  view.setText(value);
+  view.setTextColor(color);
+  view.setTextSize(size);
+  view.setTypeface(Typeface.create(heading ? "sans-serif-medium" : "sans-serif", Typeface.NORMAL));
+  return view;
+ }
+
+ private void startSection(String title) {
+  section = column();
+  section.setBackground(surface(SURFACE, 16));
+  section.setPadding(dp(12), dp(12), dp(12), dp(10));
+  LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-1, -2);
+  layout.bottomMargin = dp(12);
+  panel.addView(section, layout);
+  TextView heading = text(title, 16, ACCENT, true);
+  heading.setPadding(0, 0, 0, dp(8));
+  section.addView(heading);
+ }
+
+ private void styleSwitch(Switch control) {
+  int[][] states = {{android.R.attr.state_checked}, {}};
+  control.setThumbTintList(new ColorStateList(states, new int[]{0xffe1f5ff, MUTED}));
+  control.setTrackTintList(new ColorStateList(states, new int[]{0xff3986ad, BORDER}));
+  control.setTextColor(TEXT);
+  control.setMinHeight(dp(48));
+ }
+
+ private Button action(String label, boolean primary) {
+  Button button = new Button(this);
+  button.setText(label);
+  button.setAllCaps(false);
+  button.setTextColor(primary ? PAGE : TEXT);
+  button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x3084d5ff),
+          surface(primary ? ACCENT : CONTROL, 12), null));
+  button.setMinHeight(dp(48));
+  return button;
+ }
+
  private void buildColumns() {
+  LinearLayout root = column();
+  root.setBackgroundColor(PAGE);
+  root.setFocusableInTouchMode(true);
+  TextView heading = text("Gauge settings", 24, TEXT, true);
+  heading.setPadding(dp(16), dp(12), dp(16), dp(12));
+  root.addView(heading);
   LinearLayout columns = new LinearLayout(this);
+  root.addView(columns, new LinearLayout.LayoutParams(-1, 0, 1));
   scroll = new ScrollView(this);
-  LinearLayout left = new LinearLayout(this);
-  left.setOrientation(LinearLayout.VERTICAL);
-  panel = new LinearLayout(this);
-  panel.setOrientation(LinearLayout.VERTICAL);
-  panel.setPadding(24, 24, 24, 24);
-  picker = new LinearLayout(this);
-  picker.setOrientation(LinearLayout.VERTICAL);
+  scroll.setClipToPadding(false);
+  scroll.setPadding(dp(12), 0, dp(6), 0);
+  LinearLayout left = column();
+  panel = column();
+  picker = column();
+  picker.setBackground(surface(SURFACE, 16));
   picker.setVisibility(View.GONE);
   left.addView(panel);
   left.addView(picker);
   scroll.addView(left);
-  columns.addView(scroll, new LinearLayout.LayoutParams(0, -1, 1));
-  LinearLayout right = new LinearLayout(this);
-  right.setOrientation(LinearLayout.VERTICAL);
-  right.setPadding(12, 24, 12, 12);
-  TextView title = new TextView(this);
-  title.setText("Gauge preview · sample reading");
-  right.addView(title);
+  int screenWidth = getResources().getConfiguration().screenWidthDp;
+  float settingsWeight = screenWidth < 500 ? 2.1f : 1.2f;
+  columns.addView(scroll, new LinearLayout.LayoutParams(0, -1, settingsWeight));
+
+  LinearLayout right = column();
+  right.setBackground(surface(SURFACE, 16));
+  right.setPadding(dp(12), dp(12), dp(12), dp(8));
+  right.addView(text("Live preview", 17, TEXT, true));
+  right.addView(text("Drag a label to move it", 12, MUTED, false));
   Switch noData = new Switch(this);
   noData.setText("Preview no data");
+  styleSwitch(noData);
   right.addView(noData);
   preview = new GaugePreview(this, previewSettings);
   noData.setOnCheckedChangeListener((button, checked) -> {
@@ -55,8 +136,15 @@ public class GaugeSettings extends Activity {
    preview.invalidate();
   });
   right.addView(preview, new LinearLayout.LayoutParams(-1, 0, 1));
-  columns.addView(right, new LinearLayout.LayoutParams(0, -1, 1));
-  setContentView(columns);
+  LinearLayout.LayoutParams previewLayout = new LinearLayout.LayoutParams(0, -1, 1);
+  previewLayout.setMargins(dp(6), 0, dp(12), dp(8));
+  columns.addView(right, previewLayout);
+
+  footer = new LinearLayout(this);
+  footer.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
+  footer.setPadding(dp(12), dp(8), dp(12), dp(12));
+  root.addView(footer);
+  setContentView(root);
  }
 
  private void closeColor() {
@@ -64,6 +152,7 @@ public class GaugeSettings extends Activity {
   picker.removeAllViews();
   picker.setVisibility(View.GONE);
   panel.setVisibility(View.VISIBLE);
+  footer.setVisibility(View.VISIBLE);
   scroll.post(() -> scroll.scrollTo(0, settingsScroll));
  }
 
@@ -74,8 +163,12 @@ public class GaugeSettings extends Activity {
 
  private void sizeRow(TextView caption, String labelId) {
   LinearLayout row = new LinearLayout(this);
-  panel.addView(row);
+  section.addView(row);
+  row.setGravity(Gravity.CENTER_VERTICAL);
+  row.setMinimumHeight(dp(48));
   row.addView(caption, new LinearLayout.LayoutParams(0, -2, 1));
+  TextView font = text("Font:", 12, MUTED, false);
+  row.addView(font);
   Spinner size = new Spinner(this);
   size.setContentDescription(caption.getText() + " font size");
   int[] sizes = {0, 16, 20, 24, 28, 32, 36, 42, 48, 56, 64, 80, 96, 112, 128, 150, 175, 200};
@@ -87,7 +180,8 @@ public class GaugeSettings extends Activity {
    if (sizes[i] == prefs.getInt(key, 0)) selected = i;
   }
   size.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, options));
-  row.addView(size, new LinearLayout.LayoutParams(0, -2, 1));
+  size.setMinimumHeight(dp(44));
+  row.addView(size, new LinearLayout.LayoutParams(dp(74), -2));
   size.setSelection(selected);
   size.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
    public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) {
@@ -95,24 +189,36 @@ public class GaugeSettings extends Activity {
    }
    public void onNothingSelected(AdapterView<?> parent) {}
   });
+  Switch visible = new Switch(this);
+  styleSwitch(visible);
+  visible.setContentDescription("Show " + caption.getText());
+  String visibility = GaugeLabels.key(labelId, "visible");
+  visible.setChecked(prefs.getBoolean(visibility, true));
+  visible.setOnCheckedChangeListener((button, checked) -> previewSetting(visibility, checked));
+  row.addView(visible, new LinearLayout.LayoutParams(-2, -2));
  }
 
  private void sizeRow(String title, String labelId) {
-  TextView caption = new TextView(this);
-  caption.setText(title);
+  TextView caption = text(title, 14, TEXT, true);
   sizeRow(caption, labelId);
  }
 
  EditText field(String key, String fallback) {
-  TextView caption = new TextView(this);
-  caption.setText(key);
+  TextView caption = text(key.equals("Name") ? "Gauge title" : key, 14, TEXT, true);
   if (key.equals("Name")) sizeRow(caption, "title");
   else if (key.equals("Units")) sizeRow(caption, "units");
-  else panel.addView(caption);
+  else section.addView(caption);
   EditText edit = new EditText(this);
   edit.setSingleLine(true);
   edit.setText(prefs.getString(key, fallback));
-  panel.addView(edit);
+  edit.setTextColor(TEXT);
+  edit.setTextSize(14);
+  edit.setBackground(surface(CONTROL, 10));
+  edit.setPadding(dp(10), 0, dp(10), 0);
+  edit.setMinHeight(dp(44));
+  LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-1, -2);
+  layout.setMargins(0, dp(4), 0, dp(10));
+  section.addView(edit, layout);
   previewSettings.put(key, edit.getText().toString());
   watch(edit, value -> previewSetting(key, value));
   if (key.endsWith("color")) {
@@ -121,29 +227,119 @@ public class GaugeSettings extends Activity {
   }
   return edit;
  }
- public void onCreate(Bundle b){super.onCreate(b);id=getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,-1);setResult(RESULT_CANCELED);if(id<0){LinearLayout l=new LinearLayout(this);l.setOrientation(1);TextView t=new TextView(this);t.setText("Torque Widgets — add independent gauges from your home screen widget picker.");l.addView(t);setContentView(l);return;}prefs=getSharedPreferences("gauge"+id,0);previewSettings.putAll(prefs.getAll());buildColumns();
- String[] keys={"Name","PID","Minimum","Maximum","Units","Multiplier","Offset","Font color","Tick color","Indicator color","Needle color"};String[] defaults={"Coolant","05","0","260","°F","1.8","32","#84D5FF","#84D5FF","#84D5FF","#84D5FF"};EditText[] fields=new EditText[keys.length];for(int i=0;i<keys.length;i++)fields[i]=field(keys[i],defaults[i]);Switch circle=new Switch(this);circle.setText("Circular gauge (off = semicircle)");circle.setChecked(prefs.getBoolean("circle",false));panel.addView(circle);previewSettings.put("circle",circle.isChecked());circle.setOnCheckedChangeListener((v,checked)->previewSetting("circle",checked));Switch info=new Switch(this);info.setText("Display information only");info.setChecked(prefs.getBoolean("info",false));panel.addView(info);previewSettings.put("info",info.isChecked());info.setOnCheckedChangeListener((v,checked)->previewSetting("info",checked));Spinner style=new Spinner(this);style.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Illuminated segments","Sweeping needle","Continuous arc","None"}));style.setSelection(prefs.getInt("style",0));panel.addView(style);previewSettings.put("style",style.getSelectedItemPosition());
- style.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-  public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) { previewSetting("style",index); }
-  public void onNothingSelected(AdapterView<?> parent) {}
- });
- sizeRow("Current reading", "reading");
- sizeRow("NO DATA message", "noData");
- for (int i = 0; i < 9; i++) sizeRow("Scale number " + (i + 1), "scale" + i);
- Button save=new Button(this);save.setText("Save");panel.addView(save);save.setOnClickListener(v->{try{float min=Float.parseFloat(fields[2].getText().toString()),max=Float.parseFloat(fields[3].getText().toString());if(!Float.isFinite(min)||!Float.isFinite(max)||max<=min)throw new Exception();for(int i=5;i<7;i++)if(!Float.isFinite(Float.parseFloat(fields[i].getText().toString())))throw new Exception();for(int i=7;i<keys.length;i++)android.graphics.Color.parseColor(fields[i].getText().toString());if(fields[1].getText().toString().trim().isEmpty())throw new Exception();SharedPreferences.Editor ed=prefs.edit();
- for (Map.Entry<String, Object> entry : previewSettings.entrySet()) {
-  if (!entry.getKey().startsWith("label.")) continue;
-  Object value = entry.getValue();
-  if (value instanceof Float) ed.putFloat(entry.getKey(), (Float) value);
-  if (value instanceof Integer) ed.putInt(entry.getKey(), (Integer) value);
+ @Override public void onCreate(Bundle state) {
+  super.onCreate(state);
+  getWindow().setStatusBarColor(PAGE);
+  getWindow().setNavigationBarColor(PAGE);
+  id = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1);
+  setResult(RESULT_CANCELED);
+  if (id < 0) {
+   LinearLayout root = column();
+   root.setBackgroundColor(PAGE);
+   root.setPadding(dp(16), dp(16), dp(16), dp(16));
+   root.addView(text("Add Torque Widgets from your home screen widget picker.", 16, TEXT, false));
+   setContentView(root);
+   return;
+  }
+  prefs = CoolantWidget.prefs(this, id);
+  previewSettings.putAll(prefs.getAll());
+  buildColumns();
+
+  startSection("Labels");
+  field("Name", "Coolant");
+  field("Units", "°F");
+  sizeRow("Reading", "reading");
+  sizeRow("No data", "noData");
+
+  startSection("Gauge");
+  toggle("circle", "Circular gauge", false);
+  toggle("info", "Information only", false);
+  section.addView(text("Indicator style", 14, TEXT, true));
+  Spinner style = new Spinner(this);
+  style.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item,
+          new String[]{"Illuminated segments", "Sweeping needle", "Continuous arc", "None"}));
+  style.setSelection(prefs.getInt("style", 0));
+  section.addView(style, new LinearLayout.LayoutParams(-1, dp(48)));
+  style.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+   public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) {
+    previewSetting("style", index);
+   }
+   public void onNothingSelected(AdapterView<?> parent) {}
+  });
+  startSection("Colors");
+  for (String key : new String[]{"Font color", "Tick color", "Indicator color", "Needle color"}) {
+   field(key, "#84D5FF");
+  }
+  startSection("Torque data");
+  field("PID", "05");
+  field("Minimum", "0");
+  field("Maximum", "260");
+  field("Multiplier", "1.8");
+  field("Offset", "32");
+  startSection("Scale numbers");
+  for (int i = 0; i < 9; i++) sizeRow("Number " + (i + 1), "scale" + i);
+
+  Button cancel = action("Cancel", false);
+  cancel.setOnClickListener(view -> finish());
+  footer.addView(cancel, new LinearLayout.LayoutParams(dp(92), -2));
+  Button save = action("Save", true);
+  save.setOnClickListener(view -> save());
+  LinearLayout.LayoutParams saveLayout = new LinearLayout.LayoutParams(dp(96), -2);
+  saveLayout.leftMargin = dp(8);
+  footer.addView(save, saveLayout);
  }
- for(int i=0;i<keys.length;i++)ed.putString(keys[i],fields[i].getText().toString().trim());ed.putBoolean("circle",circle.isChecked()).putBoolean("info",info.isChecked()).putInt("style",style.getSelectedItemPosition()).apply();Intent result=new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,id);setResult(RESULT_OK,result);sendBroadcast(new Intent(this,CoolantWidget.class).setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE).putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS,new int[]{id}));finish();}catch(Exception ex){Toast.makeText(this,"Check range, conversion and hex colors",Toast.LENGTH_LONG).show();}});}
+
+ private void toggle(String key, String title, boolean fallback) {
+  Switch control = new Switch(this);
+  control.setText(title);
+  styleSwitch(control);
+  control.setChecked(prefs.getBoolean(key, fallback));
+  previewSettings.put(key, control.isChecked());
+  control.setOnCheckedChangeListener((view, value) -> previewSetting(key, value));
+  section.addView(control);
+ }
+
+ private void save() {
+  float min = GaugeFace.number(previewSettings, "Minimum", Float.NaN);
+  float max = GaugeFace.number(previewSettings, "Maximum", Float.NaN);
+  boolean valid = Float.isFinite(max - min) && max > min
+          && Float.isFinite(GaugeFace.number(previewSettings, "Multiplier", Float.NaN))
+          && Float.isFinite(GaugeFace.number(previewSettings, "Offset", Float.NaN))
+          && !GaugeFace.text(previewSettings, "PID", "").trim().isEmpty();
+  if (!valid) {
+   Toast.makeText(this, "Check the range, conversion and Torque PID.", Toast.LENGTH_LONG).show();
+   return;
+  }
+  for (String key : new String[]{"Font color", "Tick color", "Indicator color", "Needle color"}) {
+   try {
+    android.graphics.Color.parseColor(GaugeFace.text(previewSettings, key, "").trim());
+   } catch (IllegalArgumentException e) {
+    Toast.makeText(this, "Check the gauge colors.", Toast.LENGTH_LONG).show();
+    return;
+   }
+  }
+  SharedPreferences.Editor editor = prefs.edit();
+  for (Map.Entry<String, Object> entry : previewSettings.entrySet()) {
+   String key = entry.getKey();
+   Object value = entry.getValue();
+   if (value instanceof String) editor.putString(key, ((String) value).trim());
+   else if (value instanceof Float) editor.putFloat(key, (Float) value);
+   else if (value instanceof Integer) editor.putInt(key, (Integer) value);
+   else if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
+  }
+  editor.apply();
+  setResult(RESULT_OK, new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id));
+  sendBroadcast(new Intent(this, CoolantWidget.class)
+          .setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE)
+          .putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS, new int[]{id}));
+  finish();
+ }
 
  void pickColor(String key, EditText target){
   String previous = target.getText().toString();
   settingsScroll = scroll.getScrollY();
   final float[] hsv={200,.5f,1}; int original=android.graphics.Color.parseColor(target.getText().toString()); android.graphics.Color.colorToHSV(original,hsv);
-  LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.setPadding(20,12,20,12);
+  LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.setPadding(dp(12),dp(12),dp(12),dp(12));box.addView(text(key,16,ACCENT,true));
   SeekBar[] bars={new SeekBar(this),new SeekBar(this),new SeekBar(this)};
   TextView before=new TextView(this),after=new TextView(this);before.setText("Original");after.setText("Selected");before.setBackgroundColor(original);before.setTextColor(android.graphics.Color.WHITE);after.setTextColor(android.graphics.Color.WHITE);
   EditText hex=new EditText(this);hex.setSingleLine(true);hex.setHint("#RRGGBB");
@@ -163,6 +359,7 @@ public class GaugeSettings extends Activity {
   hex.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){if(busy[0]||!s.toString().matches("#[0-9a-fA-F]{6}"))return;busy[0]=true;int color=android.graphics.Color.parseColor(s.toString());android.graphics.Color.colorToHSV(color,hsv);bars[0].setProgress(Math.round(hsv[0]));bars[1].setProgress(Math.round(hsv[1]*100));bars[2].setProgress(Math.round(hsv[2]*100));after.setBackgroundColor(color);spectrum.invalidate();busy[0]=false;previewSetting(key,String.format(java.util.Locale.US,"#%06X",color&0xffffff));}public void afterTextChanged(android.text.Editable e){}});
   refresh.run();
   panel.setVisibility(View.GONE);
+  footer.setVisibility(View.GONE);
   picker.addView(box);
   picker.setVisibility(View.VISIBLE);
   scroll.post(() -> scroll.scrollTo(0, 0));
@@ -170,8 +367,7 @@ public class GaugeSettings extends Activity {
    previewSetting(key, previous);
    closeColor();
   };
-  Button apply = new Button(this);
-  apply.setText("Apply color");
+  Button apply = action("Apply color", true);
   box.addView(apply);
   apply.setOnClickListener(v -> {
    String value = hex.getText().toString();
@@ -182,8 +378,7 @@ public class GaugeSettings extends Activity {
    target.setText(value.toUpperCase(java.util.Locale.US));
    closeColor();
   });
-  Button cancel = new Button(this);
-  cancel.setText("Cancel color");
+  Button cancel = action("Cancel color", false);
   box.addView(cancel);
   cancel.setOnClickListener(v -> cancelColor.run());
  }
