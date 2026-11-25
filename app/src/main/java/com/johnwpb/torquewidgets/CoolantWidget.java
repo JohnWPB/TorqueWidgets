@@ -1,29 +1,14 @@
 package com.johnwpb.torquewidgets;
-import android.appwidget.*;
-import android.content.*;
-import android.graphics.*;
-import android.os.*;
-import android.widget.RemoteViews;
-import org.prowl.torque.remote.ITorqueService;
+import android.appwidget.*;import android.content.*;import android.graphics.*;import android.os.*;import android.widget.RemoteViews;import org.prowl.torque.remote.ITorqueService;
 public class CoolantWidget extends AppWidgetProvider {
- static final int BLUE=Color.rgb(132,213,255);
- @Override public void onUpdate(Context c,AppWidgetManager m,int[] ids){
-  PendingResult pending=goAsync();
-  Context app=c.getApplicationContext();
-  Handler h=new Handler(Looper.getMainLooper());
-  ServiceConnection connection=new ServiceConnection(){
-   boolean done=false;
-   void finish(float value){if(done)return;done=true;for(int id:ids)render(app,m,id,value);try{app.unbindService(this);}catch(Exception ignored){}pending.finish();}
-   public void onServiceConnected(ComponentName n,IBinder b){float f=Float.NaN;try{String[] v=ITorqueService.Stub.asInterface(b).getPIDValues(new String[]{"05"});if(v!=null&&v.length>0)f=Float.parseFloat(v[0])*1.8f+32;}catch(Exception ignored){}finish(f);}
-   public void onServiceDisconnected(ComponentName n){finish(Float.NaN);}
-  };
-  try{if(!app.bindService(new Intent("org.prowl.torque.remote.ITorqueService").setPackage("org.prowl.torque"),connection,Context.BIND_AUTO_CREATE)){for(int id:ids)render(app,m,id,Float.NaN);pending.finish();return;}}catch(Exception e){for(int id:ids)render(app,m,id,Float.NaN);pending.finish();return;}
- }
- static void render(Context c,AppWidgetManager m,int id,float f){
-  Bitmap b=Bitmap.createBitmap(640,640,Bitmap.Config.ARGB_8888);Canvas a=new Canvas(b);Paint p=new Paint(3);p.setColor(0xff101820);a.drawCircle(320,320,310,p);p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(5);p.setColor(0xff344958);a.drawCircle(320,320,305,p);p.setStyle(Paint.Style.FILL);p.setTextAlign(Paint.Align.CENTER);p.setTypeface(Typeface.create("sans-serif-medium",0));
-  for(int i=0;i<=40;i++){double t=Math.toRadians(135+i*6.75);boolean major=i%5==0;p.setColor(BLUE);p.setStrokeWidth(major?5:2);float r=major?249:264;a.drawLine((float)(320+280*Math.cos(t)),(float)(320+280*Math.sin(t)),(float)(320+r*Math.cos(t)),(float)(320+r*Math.sin(t)),p);if(major){p.setTextSize(29);a.drawText(""+(100+i*5),(float)(320+215*Math.cos(t)),(float)(330+215*Math.sin(t)),p);}}
-  if(Float.isFinite(f)){double t=Math.toRadians(135+270*Math.max(0,Math.min(1,(f-100)/200)));p.setColor(0xffff795d);p.setStrokeWidth(8);p.setStrokeCap(Paint.Cap.ROUND);a.drawLine(320,320,(float)(320+190*Math.cos(t)),(float)(320+190*Math.sin(t)),p);}
-  p.setColor(BLUE);a.drawCircle(320,320,13,p);p.setTextSize(62);a.drawText(Float.isFinite(f)?Math.round(f)+"°F":"-- °F",320,420,p);p.setTextSize(27);a.drawText("COOLANT",320,470,p);if(!Float.isFinite(f)){p.setTextSize(21);a.drawText("NO DATA",320,505,p);}
-  RemoteViews v=new RemoteViews(c.getPackageName(),R.layout.gauge);v.setImageViewBitmap(R.id.gauge,b);Intent refresh=new Intent(c,CoolantWidget.class).setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE).putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS,new int[]{id});v.setOnClickPendingIntent(R.id.gauge,android.app.PendingIntent.getBroadcast(c,id,refresh,android.app.PendingIntent.FLAG_UPDATE_CURRENT|android.app.PendingIntent.FLAG_IMMUTABLE));m.updateAppWidget(id,v);
- }
+ static SharedPreferences prefs(Context c,int id){return c.getSharedPreferences("gauge"+id,0);}
+ @Override public void onUpdate(Context c,AppWidgetManager m,int[] ids){PendingResult pending=goAsync();Context app=c.getApplicationContext();Handler h=new Handler(Looper.getMainLooper());
+ class Connection implements ServiceConnection {boolean done;void finish(ITorqueService s){if(done)return;done=true;for(int id:ids){float f=Float.NaN;SharedPreferences p=prefs(app,id);try{if(s!=null){String[] v=s.getPIDValues(new String[]{p.getString("PID","05")});f=Float.parseFloat(v[0])*Float.parseFloat(p.getString("Multiplier","1.8"))+Float.parseFloat(p.getString("Offset","32"));}}catch(Exception ignored){}render(app,m,id,f);}try{app.unbindService(this);}catch(Exception ignored){}pending.finish();}public void onServiceConnected(ComponentName n,IBinder b){finish(ITorqueService.Stub.asInterface(b));}public void onServiceDisconnected(ComponentName n){finish(null);}}
+ Connection conn=new Connection();try{if(!app.bindService(new Intent("org.prowl.torque.remote.ITorqueService").setPackage("org.prowl.torque"),conn,Context.BIND_AUTO_CREATE))conn.finish(null);else h.postDelayed(()->conn.finish(null),5000);}catch(Exception e){conn.finish(null);}}
+ static void line(Canvas a,Paint p,float x,float y,double t,float r1,float r2){a.drawLine(x+(float)Math.cos(t)*r1,y+(float)Math.sin(t)*r1,x+(float)Math.cos(t)*r2,y+(float)Math.sin(t)*r2,p);}
+ static void render(Context c,AppWidgetManager m,int id,float f){SharedPreferences s=prefs(c,id);float min=Float.parseFloat(s.getString("Minimum","0")),max=Float.parseFloat(s.getString("Maximum","260"));int font=Color.parseColor(s.getString("Font color","#84D5FF")),tick=Color.parseColor(s.getString("Tick color","#84D5FF")),indicator=Color.parseColor(s.getString("Indicator color","#84D5FF"));boolean circle=s.getBoolean("circle",false);float y=circle?400:425,start=circle?135:180,sweep=circle?270:180;Bitmap b=Bitmap.createBitmap(800,800,Bitmap.Config.ARGB_8888);Canvas a=new Canvas(b);Paint p=new Paint(3);p.setTextAlign(Paint.Align.CENTER);p.setTypeface(Typeface.create("sans-serif-medium",0));p.setStrokeCap(Paint.Cap.BUTT);
+ for(int i=0;i<=40;i++){double t=Math.toRadians(start+sweep*i/40);p.setColor(tick);p.setStrokeWidth(i%5==0?12:6);line(a,p,400,y,t, i%5==0?270:285,310);if(i%5==0){p.setColor(font);p.setTextSize(30);a.drawText(String.valueOf(Math.round(min+(max-min)*i/40)),400+(float)Math.cos(t)*350,y+(float)Math.sin(t)*350+10,p);}}
+ for(int i=0;i<32;i++){double t=Math.toRadians(start+sweep*(i+.5)/32);p.setColor(Float.isFinite(f)&&(f-min)/(max-min)>=(i+1)/32f?indicator:0x334f7790);p.setStrokeWidth(13);line(a,p,400,y,t,190,250);}
+ p.setColor(font);p.setTextSize(circle?105:150);a.drawText(Float.isFinite(f)?String.valueOf(Math.round(f)):"--",400,circle?425:610,p);p.setTextSize(48);a.drawText(s.getString("Units","°F"),400,circle?485:670,p);p.setTextSize(32);a.drawText(s.getString("Name","Coolant"),400,circle?545:735,p);if(!Float.isFinite(f)){p.setTextSize(23);a.drawText("NO DATA",400,circle?580:770,p);}
+ RemoteViews v=new RemoteViews(c.getPackageName(),R.layout.gauge);v.setImageViewBitmap(R.id.gauge,b);Intent settings=new Intent(c,GaugeSettings.class).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,id);v.setOnClickPendingIntent(R.id.gauge,android.app.PendingIntent.getActivity(c,id,settings,android.app.PendingIntent.FLAG_UPDATE_CURRENT|android.app.PendingIntent.FLAG_IMMUTABLE));m.updateAppWidget(id,v);}
 }
