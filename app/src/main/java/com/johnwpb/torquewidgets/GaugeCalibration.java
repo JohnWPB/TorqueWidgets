@@ -3,13 +3,13 @@ package com.johnwpb.torquewidgets;
 import java.util.Locale;
 import java.util.Map;
 
-final class NeedleCalibration {
+final class GaugeCalibration {
     static final String KEY = "needleCalibration";
     private static final double MAX_SWEEP = 359;
 
     final float lowValue, highValue, lowAngle, highAngle;
 
-    NeedleCalibration(float lowValue, float lowAngle, float highValue, float highAngle) {
+    GaugeCalibration(float lowValue, float lowAngle, float highValue, float highAngle) {
         this.lowValue = lowValue;
         this.lowAngle = lowAngle;
         this.highValue = highValue;
@@ -34,18 +34,11 @@ final class NeedleCalibration {
         return sweep >= 1 && sweep <= MAX_SWEEP;
     }
 
-    private static double clockwiseSweep(float first, float second) {
-        return ((double) second - first + 360) % 360;
+    static double clockwiseSweep(float first, float second) {
+        return (((double) second - first) % 360 + 360) % 360;
     }
 
-    static float angleFor(Map<String, ?> settings, float value, float min, float max,
-                          boolean circle, float fraction) {
-        NeedleCalibration calibration = read(settings);
-        if (calibration == null || !(max > min)) return defaultAngle(circle, fraction);
-        return calibration.angle(Float.isFinite(value) ? value : min, min, max);
-    }
-
-    private float angle(float value, float min, float max) {
+    float angle(float value, float min, float max) {
         double sweep = clockwiseSweep(lowAngle, highAngle);
         double degreesPerUnit = sweep / ((double) highValue - lowValue);
         double before = Math.max(0, ((double) lowValue - min) * degreesPerUnit);
@@ -53,7 +46,7 @@ final class NeedleCalibration {
         // Keep the calibrated marks exact and limit extrapolation to a single revolution.
         double extension = before + after;
         double limit = extension == 0 ? 1 : Math.min(1, (MAX_SWEEP - sweep) / extension);
-        double reading = Math.max(min, Math.min(max, value));
+        double reading = Float.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
         double offset = (reading - (double) lowValue) * degreesPerUnit;
         return (float) (lowAngle + Math.max(-before * limit, Math.min(sweep + after * limit, offset)));
     }
@@ -64,7 +57,7 @@ final class NeedleCalibration {
                 + (unit == null ? "" : unit.name()) + "|" + source(settings);
     }
 
-    static NeedleCalibration read(Map<String, ?> settings) {
+    static GaugeCalibration read(Map<String, ?> settings) {
         Object stored = settings.get(KEY);
         if (!(stored instanceof String)) return null;
         String[] fields = ((String) stored).split("\\|", 6);
@@ -81,7 +74,7 @@ final class NeedleCalibration {
             if (!Float.isFinite(low) || !Float.isFinite(high) || high <= low
                     || !(first >= 0 && first < 360 && second >= 0 && second < 360)
                     || !differentAngles(first, second)) return null;
-            return new NeedleCalibration(low, first, high, second);
+            return new GaugeCalibration(low, first, high, second);
         } catch (IllegalArgumentException error) {
             return null;
         }
