@@ -6,6 +6,7 @@ import android.graphics.Paint;
 import android.graphics.Typeface;
 import java.util.Map;
 
+// Preview-only drawing so settings changes cannot affect the launcher's widget update path.
 final class GaugeFace {
     static final int SIZE = 800;
     static final int BLUE = 0xff84d5ff;
@@ -34,11 +35,11 @@ final class GaugeFace {
     }
 
     static void draw(Canvas canvas, Map<String, ?> settings, float value, GaugeLabels.HitAreas hits) {
-        draw(canvas, settings, value, hits, Float.NaN, 0);
+        draw(canvas, settings, value, hits, Float.NaN);
     }
 
     static void draw(Canvas canvas, Map<String, ?> settings, float value, GaugeLabels.HitAreas hits,
-                     float calibrationAngle, float calibrationStart) {
+                     float calibrationAngle) {
         GpsMetric metric = GpsMetric.selected(settings);
         float min = metric == null ? number(settings, "Minimum", 0) : metric.min;
         float max = metric == null ? number(settings, "Maximum", 260) : metric.max;
@@ -49,8 +50,7 @@ final class GaugeFace {
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(TYPEFACE);
-        if (!info) drawScale(canvas, paint, settings, value, min, max, circle, font, hits,
-                calibrationAngle, calibrationStart);
+        if (!info) drawScale(canvas, paint, settings, value, min, max, circle, font, hits, calibrationAngle);
         paint.setColor(font);
         GaugeLabels.draw(canvas, paint, settings, hits, "reading",
                 GpsMetric.reading(metric, value), 400,
@@ -66,10 +66,13 @@ final class GaugeFace {
 
     private static void drawScale(Canvas canvas, Paint paint, Map<String, ?> settings, float value,
                                   float min, float max, boolean circle, int font, GaugeLabels.HitAreas hits,
-                                  float calibrationAngle, float calibrationStart) {
-        float y = GaugeCalibration.pivotY(circle), start = circle ? 135 : 180, sweep = circle ? 270 : 180;
+                                  float calibrationAngle) {
+        float y = NeedleCalibration.pivotY(circle), start = circle ? 135 : 180, sweep = circle ? 270 : 180;
         int tick = color(settings, "Tick color", BLUE);
+        int indicator = color(settings, "Indicator color", BLUE);
         float range = max - min;
+        float fraction = Float.isFinite(value) && Float.isFinite(range) && range > 0
+                ? Math.max(0, Math.min(1, (value - min) / range)) : 0;
         boolean showTicks = !Boolean.FALSE.equals(settings.get("showTicks"));
         boolean showScale = !Boolean.FALSE.equals(settings.get("showScale"));
         for (int i = 0; i <= 40; i++) {
@@ -88,8 +91,34 @@ final class GaugeFace {
                         y + (float) Math.sin(angle) * 350 + 10, 30);
             }
         }
-        GaugeIndicator.draw(canvas, paint, settings, value, min, max, circle,
-                calibrationAngle, calibrationStart);
+        Object style = settings.get("style");
+        switch (style instanceof Integer ? (Integer) style : 0) {
+            case 0:
+                paint.setStrokeWidth(13);
+                for (int i = 0; i < 32; i++) {
+                    paint.setColor(fraction >= (i + 1) / 32f ? indicator : 0x334f7790);
+                    line(canvas, paint, y, Math.toRadians(start + sweep * (i + .5) / 32), 190, 250);
+                }
+                break;
+            case 1:
+                paint.setColor(color(settings, "Needle color", indicator));
+                paint.setStrokeWidth(12);
+                paint.setStrokeCap(Paint.Cap.ROUND);
+                float angle = Float.isFinite(calibrationAngle) ? calibrationAngle
+                        : NeedleCalibration.angleFor(settings, value, min, max, circle, fraction);
+                line(canvas, paint, y, Math.toRadians(angle), 0, 260);
+                canvas.drawCircle(400, y, 18, paint);
+                break;
+            case 2:
+                paint.setColor(indicator);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(22);
+                canvas.drawArc(170, y - 230, 630, y + 230, start, sweep * fraction, false, paint);
+                paint.setStyle(Paint.Style.FILL);
+                break;
+            default:
+                break;
+        }
     }
 
     private static void line(Canvas canvas, Paint paint, float y, double angle, float inner, float outer) {

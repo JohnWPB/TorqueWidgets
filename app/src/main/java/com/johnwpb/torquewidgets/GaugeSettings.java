@@ -38,7 +38,7 @@ public class GaugeSettings extends Activity {
  private Switch editImage;
  private Button fitImage, locationAccess;
  private LinearLayout gpsControls, pidControls;
- private Button temperatureUnits;
+ private Button temperatureUnits, calibrateNeedle;
  private EditText customUnits, minimum, maximum;
  private static final int LOCATION_PERMISSION = 802;
 
@@ -58,6 +58,7 @@ public class GaugeSettings extends Activity {
  private void previewGaugeMode(String key, boolean value) {
   previewSetting(key, value);
   refreshReadingFontSize.run();
+  updateCalibrationButton();
  }
 
  private int dp(int size) {
@@ -145,19 +146,7 @@ public class GaugeSettings extends Activity {
   LinearLayout right = column();
   right.setBackground(surface(SURFACE, 16));
   right.setPadding(dp(12), dp(12), dp(12), dp(8));
-  LinearLayout previewHeader = new LinearLayout(this);
-  previewHeader.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
-  if (screenWidth >= 500) {
-   previewHeader.addView(text("Live preview", 17, TEXT, true),
-           new LinearLayout.LayoutParams(0, -2, 1));
-  }
-  Button calibrate = action("Calibrate", false);
-  calibrate.setMinWidth(0);
-  calibrate.setMinimumWidth(0);
-  calibrate.setPadding(dp(8), 0, dp(8), 0);
-  calibrate.setOnClickListener(view -> openGaugeCalibration());
-  previewHeader.addView(calibrate, new LinearLayout.LayoutParams(-2, -2));
-  right.addView(previewHeader, new LinearLayout.LayoutParams(-1, -2));
+  right.addView(text("Live preview", 17, TEXT, true));
   right.addView(text("Drag a label to move it", 12, MUTED, false));
   Switch noData = new Switch(this);
   noData.setText("Preview no data");
@@ -374,39 +363,43 @@ public class GaugeSettings extends Activity {
   section.addView(caption);
   LinearLayout row = colorRow();
   String[] styles = {"Illuminated segments", "Sweeping needle", "Continuous arc", "None"};
-  int selected = GaugeIndicator.style(previewSettings);
+  int savedStyle = prefs.getInt("style", 0);
+  int selected = Math.max(0, Math.min(styles.length - 1, savedStyle));
   EditText indicatorColor = field("Indicator color", "#84D5FF");
   EditText needleColor = field("Needle color", "#84D5FF");
   Button chooseColor = addColorButton(row, "indicator color", () -> {
-   if (GaugeIndicator.style(previewSettings) == GaugeIndicator.NEEDLE) pickColor("Needle color", needleColor);
+   Object style = previewSettings.get("style");
+   if (Integer.valueOf(1).equals(style)) pickColor("Needle color", needleColor);
    else pickColor("Indicator color", indicatorColor);
   });
   java.util.function.IntConsumer showColorControl = index -> {
-   boolean needle = index == GaugeIndicator.NEEDLE;
-   chooseColor.setVisibility(index == GaugeIndicator.NONE ? View.GONE : View.VISIBLE);
+   boolean needle = index == 1;
+   chooseColor.setVisibility(index == 3 ? View.GONE : View.VISIBLE);
    chooseColor.setContentDescription(needle ? "Choose needle color" : "Choose indicator color");
   };
   Button menu = dropdownButton(title, styles, selected, 14, index -> {
-   previewSetting(GaugeIndicator.KEY, index);
+   previewSetting("style", index);
    showColorControl.accept(index);
+   updateCalibrationButton();
   });
   menu.setEllipsize(android.text.TextUtils.TruncateAt.END);
   menu.setId(View.generateViewId());
   caption.setLabelFor(menu.getId());
   row.addView(menu, 0, new LinearLayout.LayoutParams(-2, -2, 1));
   showColorControl.accept(selected);
+  calibrateNeedle = action("Calibrate Needle", false);
+  calibrateNeedle.setOnClickListener(view -> openNeedleCalibration());
+  section.addView(calibrateNeedle, new LinearLayout.LayoutParams(-2, -2));
+  updateCalibrationButton();
  }
 
- private void openGaugeCalibration() {
-  if (Boolean.TRUE.equals(previewSettings.get("info"))) {
-   Toast.makeText(this, "Turn off Information only to calibrate the indicator.", Toast.LENGTH_LONG).show();
-   return;
-  }
-  int style = GaugeIndicator.style(previewSettings);
-  if (style == GaugeIndicator.NONE) {
-   Toast.makeText(this, "Choose an indicator style before calibrating.", Toast.LENGTH_LONG).show();
-   return;
-  }
+ private void updateCalibrationButton() {
+  boolean hasNeedle = Integer.valueOf(1).equals(previewSettings.get("style"))
+          && !Boolean.TRUE.equals(previewSettings.get("info"));
+  calibrateNeedle.setVisibility(hasNeedle ? View.VISIBLE : View.GONE);
+ }
+
+ private void openNeedleCalibration() {
   GpsMetric metric = GpsMetric.selected(previewSettings);
   float min = metric == null ? GaugeFace.number(previewSettings, "Minimum", Float.NaN) : metric.min;
   float max = metric == null ? GaugeFace.number(previewSettings, "Maximum", Float.NaN) : metric.max;
@@ -415,19 +408,12 @@ public class GaugeSettings extends Activity {
    return;
   }
   String units = metric == null ? TemperatureUnit.displayUnits(previewSettings).trim() : metric.units;
-  String indicator;
-  switch (style) {
-   case GaugeIndicator.ARC: indicator = "tip of the arc"; break;
-   case GaugeIndicator.SEGMENTS: indicator = "end of the lit segments"; break;
-   default: indicator = "needle"; break;
-  }
-  new GaugeCalibrationDialog(min, max, units, indicator).show();
+  new NeedleCalibrationDialog(min, max, units).show();
  }
 
- private final class GaugeCalibrationDialog extends Dialog {
+ private final class NeedleCalibrationDialog extends Dialog {
   private final float min, max;
-  private final String units, indicator;
-  private final float startAngle;
+  private final String units;
   private final String[] values = new String[2];
   private final float[] angles = new float[2];
   private final GaugePreview dial;
@@ -436,32 +422,30 @@ public class GaugeSettings extends Activity {
   private final Button back, reset, next;
   private int step;
 
-  GaugeCalibrationDialog(float min, float max, String units, String indicator) {
+  NeedleCalibrationDialog(float min, float max, String units) {
    super(GaugeSettings.this, android.R.style.Theme_Material_NoActionBar);
    this.min = min;
    this.max = max;
    this.units = units.isEmpty() ? "" : " " + units;
-   this.indicator = indicator;
-   GaugeCalibration saved = GaugeCalibration.read(previewSettings);
+   NeedleCalibration saved = NeedleCalibration.read(previewSettings);
    boolean circle = Boolean.TRUE.equals(previewSettings.get("circle"));
-   startAngle = saved == null ? GaugeCalibration.defaultAngle(circle, 0) : saved.angle(min, min, max);
    values[0] = saved == null ? mark(min) : mark(saved.lowValue);
    values[1] = saved == null ? "" : mark(saved.highValue);
-   angles[0] = saved == null ? GaugeCalibration.defaultAngle(circle, 0) : saved.lowAngle;
-   angles[1] = saved == null ? GaugeCalibration.defaultAngle(circle, .5f) : saved.highAngle;
+   angles[0] = saved == null ? NeedleCalibration.defaultAngle(circle, 0) : saved.lowAngle;
+   angles[1] = saved == null ? NeedleCalibration.defaultAngle(circle, .5f) : saved.highAngle;
    LinearLayout content = column();
    content.setBackgroundColor(PAGE);
    content.setPadding(dp(16), dp(12), dp(16), dp(12));
    content.setFocusableInTouchMode(true);
-   content.addView(text("Calibrate gauge", 22, TEXT, true));
+   content.addView(text("Calibrate Needle", 22, TEXT, true));
    instruction = text("", 14, MUTED, false);
    instruction.setPadding(0, dp(4), 0, dp(6));
    content.addView(instruction);
 
    dial = new GaugePreview(GaugeSettings.this, previewSettings);
    dial.backgroundImage = preview.backgroundImage;
-   dial.calibratingIndicator = true;
-   dial.setContentDescription("Gauge preview. Drag the " + indicator + " to the mark.");
+   dial.calibratingNeedle = true;
+   dial.setContentDescription("Gauge preview. Drag the needle to the mark.");
    content.addView(dial, new LinearLayout.LayoutParams(-1, 0, 1));
 
    value = new EditText(GaugeSettings.this);
@@ -494,7 +478,7 @@ public class GaugeSettings extends Activity {
    buttons.addView(back, new LinearLayout.LayoutParams(0, -2, 1));
    reset = action("Reset", false);
    reset.setOnClickListener(view -> {
-    previewSettings.remove(GaugeCalibration.KEY);
+    previewSettings.remove(NeedleCalibration.KEY);
     preview.invalidate();
     dismiss();
    });
@@ -516,17 +500,16 @@ public class GaugeSettings extends Activity {
    value.clearFocus();
    value.setError(null);
    instruction.setText(index == 0
-           ? "1 of 2. Drag the " + indicator + " to a lower mark, then enter its value."
-           : "2 of 2. Drag the " + indicator + " clockwise to a higher mark and enter its value. Tap Apply, then Save in gauge settings.");
-   String hint = units.isEmpty() ? "Value at the mark" : "Value at the mark (" + units.trim() + ")";
+           ? "1 of 2. Drag the needle to a lower mark, then enter its value."
+           : "2 of 2. Drag the needle clockwise to a higher mark and enter its value. Tap Apply, then Save in gauge settings.");
+   String hint = units.isEmpty() ? "Value at the needle" : "Value at the needle (" + units.trim() + ")";
    value.setHint(hint);
    value.setContentDescription(hint);
    dial.calibrationAngle = angles[index];
-   dial.calibrationStart = index == 0 ? startAngle : angles[0];
    value.setText(values[index]);
    dial.invalidate();
    back.setVisibility(index == 1 ? View.VISIBLE : View.GONE);
-   reset.setVisibility(index == 0 && previewSettings.containsKey(GaugeCalibration.KEY)
+   reset.setVisibility(index == 0 && previewSettings.containsKey(NeedleCalibration.KEY)
            ? View.VISIBLE : View.GONE);
    next.setText(index == 0 ? "Next" : "Apply");
   }
@@ -552,12 +535,12 @@ public class GaugeSettings extends Activity {
     value.setError("Enter a value higher than " + mark(low) + units + ".");
     return;
    }
-   if (!GaugeCalibration.differentAngles(angles[0], angles[1])) {
-    Toast.makeText(GaugeSettings.this, "Drag the " + indicator + " to a different mark.", Toast.LENGTH_LONG).show();
+   if (!NeedleCalibration.differentAngles(angles[0], angles[1])) {
+    Toast.makeText(GaugeSettings.this, "Drag the needle to a different mark.", Toast.LENGTH_LONG).show();
     return;
    }
-   GaugeCalibration calibration = new GaugeCalibration(low, angles[0], reading, angles[1]);
-   previewSetting(GaugeCalibration.KEY, calibration.encode(previewSettings));
+   NeedleCalibration calibration = new NeedleCalibration(low, angles[0], reading, angles[1]);
+   previewSetting(NeedleCalibration.KEY, calibration.encode(previewSettings));
    dismiss();
   }
 
@@ -594,7 +577,6 @@ public class GaugeSettings extends Activity {
   }
   prefs = CoolantWidget.prefs(this, id);
   previewSettings.putAll(prefs.getAll());
-  previewSettings.put(GaugeIndicator.KEY, GaugeIndicator.style(previewSettings));
   buildColumns();
 
   startSection("Labels");
@@ -853,7 +835,7 @@ public class GaugeSettings extends Activity {
    }
   }
   SharedPreferences.Editor editor = prefs.edit();
-  for (String key : new String[]{"imageLeft", "imageTop", "imageWidth", GaugeCalibration.KEY}) {
+  for (String key : new String[]{"imageLeft", "imageTop", "imageWidth", NeedleCalibration.KEY}) {
    if (!previewSettings.containsKey(key)) editor.remove(key);
   }
   for (Map.Entry<String, Object> entry : previewSettings.entrySet()) {
