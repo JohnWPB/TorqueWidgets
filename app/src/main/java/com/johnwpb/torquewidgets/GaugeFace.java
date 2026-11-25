@@ -10,6 +10,7 @@ import java.util.Map;
 final class GaugeFace {
     static final int SIZE = 800;
     static final int BLUE = 0xff84d5ff;
+    static final String SCALE_COLOR = "Indicator numbers color";
     private static final Typeface TYPEFACE = Typeface.create("sans-serif-medium", Typeface.NORMAL);
 
     static String text(Map<String, ?> settings, String key, String fallback) {
@@ -45,7 +46,7 @@ final class GaugeFace {
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(TYPEFACE);
-        if (!info) drawScale(canvas, paint, settings, value, min, max, circle, font, hits);
+        if (!info) drawScale(canvas, paint, settings, value, min, max, circle, color(settings, SCALE_COLOR, font), hits);
         paint.setColor(font);
         GaugeLabels.draw(canvas, paint, settings, hits, "reading",
                 GpsMetric.reading(metric, value), 400,
@@ -59,7 +60,7 @@ final class GaugeFace {
     }
 
     private static void drawScale(Canvas canvas, Paint paint, Map<String, ?> settings, float value,
-                                  float min, float max, boolean circle, int font, GaugeLabels.HitAreas hits) {
+                                  float min, float max, boolean circle, int scaleColor, GaugeLabels.HitAreas hits) {
         float y = circle ? 400 : 425, start = circle ? 135 : 180, sweep = circle ? 270 : 180;
         int tick = color(settings, "Tick color", BLUE);
         int indicator = color(settings, "Indicator color", BLUE);
@@ -77,7 +78,7 @@ final class GaugeFace {
                 line(canvas, paint, y, angle, major ? 270 : 285, 310);
             }
             if (major && showScale) {
-                paint.setColor(font);
+                paint.setColor(scaleColor);
                 GaugeLabels.draw(canvas, paint, settings, hits, "scale" + i / 5,
                         Integer.toString(Math.round(min + range * i / 40)),
                         400 + (float) Math.cos(angle) * 350,

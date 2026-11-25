@@ -18,6 +18,9 @@ public class GaugeSettings extends Activity {
  private static final int TEXT = 0xffedf5ff;
  private static final int MUTED = 0xffabc0d7;
  private static final int ACCENT = 0xff84d5ff;
+ private static final String DEFAULT_COLOR = "#84D5FF";
+ private static final String TICK_COLOR = "Tick color";
+ private static final String SCALE_COLOR = GaugeFace.SCALE_COLOR;
  private int id;
  private SharedPreferences prefs;
  private LinearLayout panel, section, footer;
@@ -32,6 +35,7 @@ public class GaugeSettings extends Activity {
  private Button removeBackground;
  private boolean backgroundChanged;
  private Switch editImage;
+ private LinearLayout editImageRow;
  private Button fitImage, locationAccess;
  private LinearLayout gpsControls, pidControls;
  private static final int LOCATION_PERMISSION = 802;
@@ -96,6 +100,31 @@ public class GaugeSettings extends Activity {
   control.setMinHeight(dp(48));
  }
 
+ private LinearLayout settingsRow(LinearLayout parent) {
+  LinearLayout row = new LinearLayout(this);
+  row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+  parent.addView(row, new LinearLayout.LayoutParams(-2, -2));
+  return row;
+ }
+
+ private LinearLayout switchRow(LinearLayout parent, Switch control, TextView caption) {
+  LinearLayout row = settingsRow(parent);
+  styleSwitch(control);
+  control.setId(View.generateViewId());
+  caption.setLabelFor(control.getId());
+  control.setContentDescription(caption.getText());
+  row.addView(control, new LinearLayout.LayoutParams(-2, -2));
+  LinearLayout.LayoutParams label = new LinearLayout.LayoutParams(-2, -2, 1);
+  label.setMarginStart(dp(8));
+  row.addView(caption, label);
+  caption.setOnClickListener(view -> control.performClick());
+  return row;
+ }
+
+ private LinearLayout switchRow(LinearLayout parent, Switch control, String title) {
+  return switchRow(parent, control, text(title, 14, TEXT, false));
+ }
+
  private Button action(String label, boolean primary) {
   Button button = new Button(this);
   button.setText(label);
@@ -137,9 +166,7 @@ public class GaugeSettings extends Activity {
   right.addView(text("Live preview", 17, TEXT, true));
   right.addView(text("Drag a label to move it", 12, MUTED, false));
   Switch noData = new Switch(this);
-  noData.setText("Preview no data");
-  styleSwitch(noData);
-  right.addView(noData);
+  switchRow(right, noData, "Preview no data");
   preview = new GaugePreview(this, previewSettings);
   noData.setOnCheckedChangeListener((button, checked) -> {
    preview.noData = checked;
@@ -159,13 +186,11 @@ public class GaugeSettings extends Activity {
   removeBackground.setOnClickListener(view -> setBackgroundImage(null));
   right.addView(removeBackground, new LinearLayout.LayoutParams(-1, -2));
   editImage = new Switch(this);
-  editImage.setText("Edit image");
-  styleSwitch(editImage);
+  editImageRow = switchRow(right, editImage, "Edit image");
   editImage.setOnCheckedChangeListener((button, checked) -> {
    preview.editBackground = checked;
    preview.invalidate();
   });
-  right.addView(editImage);
   fitImage = action("Fit image", false);
   fitImage.setOnClickListener(view -> {
    resetImagePosition();
@@ -199,13 +224,14 @@ public class GaugeSettings extends Activity {
  }
 
  private void sizeRow(TextView caption, String labelId) {
-  LinearLayout row = new LinearLayout(this);
-  section.addView(row);
-  row.setGravity(Gravity.CENTER_VERTICAL);
-  row.setMinimumHeight(dp(48));
-  row.addView(caption, new LinearLayout.LayoutParams(0, -2, 1));
-  TextView font = text("Font:", 12, MUTED, false);
-  row.addView(font);
+  Switch visible = new Switch(this);
+  LinearLayout row = switchRow(section, visible, caption);
+  visible.setContentDescription("Show " + caption.getText());
+  String visibility = GaugeLabels.key(labelId, "visible");
+  visible.setChecked(prefs.getBoolean(visibility, true));
+  visible.setOnCheckedChangeListener((button, checked) -> previewSetting(visibility, checked));
+  TextView font = text("Font size", 12, MUTED, false);
+  addRowControl(row, font, 8);
   int[] sizes = {0, 16, 20, 24, 28, 32, 36, 42, 48, 56, 64, 80, 96, 112, 128, 150, 175, 200};
   String[] options = new String[sizes.length];
   int selected = 0;
@@ -216,17 +242,26 @@ public class GaugeSettings extends Activity {
   }
   Button size = dropdownButton(caption.getText() + " font size", options, selected, 12,
           index -> previewSetting(key, sizes[index]));
-  LinearLayout.LayoutParams sizeLayout = new LinearLayout.LayoutParams(-2, -2);
-  sizeLayout.leftMargin = dp(4);
-  sizeLayout.rightMargin = dp(4);
-  row.addView(size, sizeLayout);
-  Switch visible = new Switch(this);
-  styleSwitch(visible);
-  visible.setContentDescription("Show " + caption.getText());
-  String visibility = GaugeLabels.key(labelId, "visible");
-  visible.setChecked(prefs.getBoolean(visibility, true));
-  visible.setOnCheckedChangeListener((button, checked) -> previewSetting(visibility, checked));
-  row.addView(visible, new LinearLayout.LayoutParams(-2, -2));
+  size.setId(View.generateViewId());
+  font.setLabelFor(size.getId());
+  addRowControl(row, size, 4);
+ }
+
+ private void addRowControl(LinearLayout row, View control, int gap) {
+  LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-2, -2);
+  layout.setMarginStart(dp(gap));
+  row.addView(control, layout);
+ }
+
+ private void addColorButton(LinearLayout row, String key) {
+  Button button = action("Choose color", false);
+  button.setTextSize(12);
+  button.setMinWidth(0);
+  button.setMinimumWidth(0);
+  button.setPadding(dp(8), 0, dp(8), 0);
+  button.setContentDescription("Choose " + key.toLowerCase(java.util.Locale.ROOT));
+  button.setOnClickListener(view -> pickColor(key));
+  addRowControl(row, button, 8);
  }
 
  private void sizeRow(String title, String labelId) {
@@ -254,7 +289,7 @@ public class GaugeSettings extends Activity {
   watch(edit, value -> previewSetting(key, value));
   if (key.endsWith("color")) {
    edit.setFocusable(false);
-   edit.setOnClickListener(v -> pickColor(key, edit));
+   edit.setOnClickListener(v -> pickColor(key, edit::setText));
   }
   return edit;
  }
@@ -277,6 +312,7 @@ public class GaugeSettings extends Activity {
   }
   prefs = CoolantWidget.prefs(this, id);
   previewSettings.putAll(prefs.getAll());
+  previewSettings.putIfAbsent(TICK_COLOR, DEFAULT_COLOR);
   buildColumns();
 
   startSection("Labels");
@@ -288,14 +324,15 @@ public class GaugeSettings extends Activity {
   startSection("Gauge");
   dropdown("Gauge style", new String[]{"Semicircular", "Circular"},
           prefs.getBoolean("circle", false) ? 1 : 0, index -> previewSetting("circle", index == 1));
-  toggle("showTicks", "Show tick marks", true);
-  indicatorNumbers = scaleSwitch("Show indicator numbers");
+  addColorButton(toggle("showTicks", "Show tick marks", true), TICK_COLOR);
+  indicatorNumbers = scaleSwitch();
+  addColorButton(switchRow(section, indicatorNumbers, "Show indicator numbers"), SCALE_COLOR);
   toggle("info", "Information only", false);
   dropdown("Indicator style", new String[]{"Illuminated segments", "Sweeping needle", "Continuous arc", "None"},
           prefs.getInt("style", 0), index -> previewSetting("style", index));
   startSection("Colors");
-  for (String key : new String[]{"Font color", "Tick color", "Indicator color", "Needle color"}) {
-   field(key, "#84D5FF");
+  for (String key : new String[]{"Font color", "Indicator color", "Needle color"}) {
+   field(key, DEFAULT_COLOR);
   }
   startSection("Information provider");
   boolean useGps = GpsMetric.selected(previewSettings) != null;
@@ -326,7 +363,8 @@ public class GaugeSettings extends Activity {
   gpsControls.addView(locationAccess);
   updateProvider();
   startSection("Scale numbers");
-  scaleNumbers = scaleSwitch("Show all scale numbers");
+  scaleNumbers = scaleSwitch();
+  switchRow(section, scaleNumbers, "Show all scale numbers");
   for (int i = 0; i < 9; i++) sizeRow("Number " + (i + 1), "scale" + i);
 
   startSection("Backup");
@@ -395,10 +433,8 @@ public class GaugeSettings extends Activity {
   return button;
  }
 
- private Switch scaleSwitch(String title) {
+ private Switch scaleSwitch() {
   Switch control = new Switch(this);
-  control.setText(title);
-  styleSwitch(control);
   control.setChecked(!Boolean.FALSE.equals(previewSettings.get("showScale")));
   control.setOnCheckedChangeListener((button, checked) -> {
    if (Boolean.valueOf(checked).equals(previewSettings.get("showScale"))) return;
@@ -406,7 +442,6 @@ public class GaugeSettings extends Activity {
    indicatorNumbers.setChecked(checked);
    scaleNumbers.setChecked(checked);
   });
-  section.addView(control);
   return control;
  }
 
@@ -436,7 +471,7 @@ public class GaugeSettings extends Activity {
  private void updateImageButtons() {
   int visibility = preview.backgroundImage == null ? View.GONE : View.VISIBLE;
   removeBackground.setVisibility(visibility);
-  editImage.setVisibility(visibility);
+  editImageRow.setVisibility(visibility);
   fitImage.setVisibility(visibility);
  }
 
@@ -481,14 +516,12 @@ public class GaugeSettings extends Activity {
           .show();
  }
 
- private void toggle(String key, String title, boolean fallback) {
+ private LinearLayout toggle(String key, String title, boolean fallback) {
   Switch control = new Switch(this);
-  control.setText(title);
-  styleSwitch(control);
   control.setChecked(prefs.getBoolean(key, fallback));
   previewSettings.put(key, control.isChecked());
   control.setOnCheckedChangeListener((view, value) -> previewSetting(key, value));
-  section.addView(control);
+  return switchRow(section, control, title);
  }
 
  private void save() {
@@ -502,7 +535,7 @@ public class GaugeSettings extends Activity {
    Toast.makeText(this, "Check the range, conversion and Torque PID.", Toast.LENGTH_LONG).show();
    return;
   }
-  for (String key : new String[]{"Font color", "Tick color", "Indicator color", "Needle color"}) {
+  for (String key : new String[]{"Font color", TICK_COLOR, "Indicator color", "Needle color"}) {
    try {
     android.graphics.Color.parseColor(GaugeFace.text(previewSettings, key, "").trim());
    } catch (IllegalArgumentException e) {
@@ -552,10 +585,17 @@ public class GaugeSettings extends Activity {
   finish();
  }
 
- void pickColor(String key, EditText target){
-  String previous = target.getText().toString();
+ private void pickColor(String key) {
+  pickColor(key, value -> previewSetting(key, value));
+ }
+
+ private void pickColor(String key, java.util.function.Consumer<String> applyColor) {
+  Object previous = previewSettings.get(key);
+  int fallback = key.equals(SCALE_COLOR) ? GaugeFace.color(previewSettings, "Font color", ACCENT) : ACCENT;
+  int original = GaugeFace.color(previewSettings, key, fallback);
   settingsScroll = scroll.getScrollY();
-  final float[] hsv={200,.5f,1}; int original=android.graphics.Color.parseColor(target.getText().toString()); android.graphics.Color.colorToHSV(original,hsv);
+  final float[] hsv = new float[3];
+  android.graphics.Color.colorToHSV(original, hsv);
   LinearLayout box=new LinearLayout(this);box.setOrientation(1);box.setPadding(dp(12),dp(12),dp(12),dp(12));box.addView(text(key,16,ACCENT,true));
   SeekBar[] bars={new SeekBar(this),new SeekBar(this),new SeekBar(this)};
   TextView before=new TextView(this),after=new TextView(this);before.setText("Original");after.setText("Selected");before.setBackgroundColor(original);before.setTextColor(android.graphics.Color.WHITE);after.setTextColor(android.graphics.Color.WHITE);
@@ -581,7 +621,12 @@ public class GaugeSettings extends Activity {
   picker.setVisibility(View.VISIBLE);
   scroll.post(() -> scroll.scrollTo(0, 0));
   cancelColor = () -> {
-   previewSetting(key, previous);
+   if (previous == null) {
+    previewSettings.remove(key);
+    preview.invalidate();
+   } else {
+    previewSetting(key, previous);
+   }
    closeColor();
   };
   Button apply = action("Apply color", true);
@@ -592,7 +637,7 @@ public class GaugeSettings extends Activity {
     hex.setError("Enter #RRGGBB");
     return;
    }
-   target.setText(value.toUpperCase(java.util.Locale.US));
+   applyColor.accept(value.toUpperCase(java.util.Locale.US));
    closeColor();
   });
   Button cancel = action("Cancel color", false);
