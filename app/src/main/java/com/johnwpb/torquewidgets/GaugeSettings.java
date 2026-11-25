@@ -209,15 +209,17 @@ public class GaugeSettings extends Activity {
   int width = getResources().getConfiguration().screenWidthDp;
   float leftFraction = width < 500 ? 2.1f / 3.1f : 1.2f / 2.2f;
   boolean compact = width * leftFraction < 300;
+  addColorButton(row, title, colorKey);
   LinearLayout controls = row;
   if (compact) {
-   addColorButton(row, title, colorKey);
    controls = new LinearLayout(this);
    controls.setGravity(Gravity.END | Gravity.CENTER_VERTICAL);
    section.addView(controls);
   }
   TextView font = text("Font:", 12, MUTED, false);
-  controls.addView(font);
+  LinearLayout.LayoutParams fontLayout = new LinearLayout.LayoutParams(-2, -2);
+  if (!compact) fontLayout.leftMargin = dp(8);
+  controls.addView(font, fontLayout);
   int[] sizes = {0, 16, 20, 24, 28, 32, 36, 42, 48, 56, 64, 80, 96, 112, 128, 150, 175, 200};
   String[] options = new String[sizes.length];
   int selected = 0;
@@ -239,7 +241,6 @@ public class GaugeSettings extends Activity {
   visible.setChecked(prefs.getBoolean(visibility, true));
   visible.setOnCheckedChangeListener((button, checked) -> previewSetting(visibility, checked));
   controls.addView(visible, new LinearLayout.LayoutParams(-2, -2));
-  if (!compact) addColorButton(row, title, colorKey);
  }
 
  private void sizeRow(String title, String labelId) {
@@ -591,7 +592,7 @@ public class GaugeSettings extends Activity {
   int fallback = key.equals("Needle color") ? GaugeFace.color(previewSettings, "Indicator color", ACCENT)
           : key.equals("Scale color") ? labelColor : ACCENT;
   int original = key.startsWith("label.")
-          ? GaugeLabels.color(previewSettings, key.split("\\.")[1], labelColor)
+          ? GaugeLabels.color(previewSettings, key.substring("label.".length(), key.lastIndexOf('.')), labelColor)
           : GaugeFace.color(previewSettings, key, fallback);
   float[] hsv = new float[3];
   android.graphics.Color.colorToHSV(original, hsv);
