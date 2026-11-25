@@ -1,5 +1,4 @@
 package com.johnwpb.torquewidgets;
-import android.graphics.Canvas;
 import android.view.View;
 import java.util.HashMap;
 import java.util.Map;
@@ -9,7 +8,7 @@ public class GaugeSettings extends Activity {
  private final Map<String, Object> previewSettings = new HashMap<>();
  private ScrollView scroll;
  private LinearLayout picker;
- private View preview;
+ private GaugePreview preview;
  private Runnable cancelColor;
  private int settingsScroll;
 
@@ -47,20 +46,14 @@ public class GaugeSettings extends Activity {
   TextView title = new TextView(this);
   title.setText("Gauge preview · sample reading");
   right.addView(title);
-  preview = new View(this) {
-   @Override protected void onDraw(Canvas canvas) {
-    float size = Math.min(getWidth(), getHeight());
-    if (size <= 0) return;
-    float min = GaugeFace.number(previewSettings, "Minimum", 0);
-    float max = GaugeFace.number(previewSettings, "Maximum", 260);
-    float sample = (float) (min + ((double) max - min) * .55);
-    canvas.save();
-    canvas.translate((getWidth() - size) / 2, 0);
-    canvas.scale(size / GaugeFace.SIZE, size / GaugeFace.SIZE);
-    GaugeFace.draw(canvas, previewSettings, sample);
-    canvas.restore();
-   }
-  };
+  Switch noData = new Switch(this);
+  noData.setText("Preview no data");
+  right.addView(noData);
+  preview = new GaugePreview(this, previewSettings);
+  noData.setOnCheckedChangeListener((button, checked) -> {
+   preview.noData = checked;
+   preview.invalidate();
+  });
   right.addView(preview, new LinearLayout.LayoutParams(-1, 0, 1));
   columns.addView(right, new LinearLayout.LayoutParams(0, -1, 1));
   setContentView(columns);
@@ -79,14 +72,72 @@ public class GaugeSettings extends Activity {
   else super.onBackPressed();
  }
 
- EditText field(String key,String def){TextView label=new TextView(this);label.setText(key);panel.addView(label);EditText e=new EditText(this);e.setSingleLine(true);e.setText(prefs.getString(key,def));panel.addView(e);previewSettings.put(key,e.getText().toString());watch(e,value->previewSetting(key,value));if(key.endsWith("color")){e.setFocusable(false);e.setOnClickListener(v->pickColor(key,e));}return e;}
- public void onCreate(Bundle b){super.onCreate(b);id=getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,-1);setResult(RESULT_CANCELED);if(id<0){LinearLayout l=new LinearLayout(this);l.setOrientation(1);TextView t=new TextView(this);t.setText("Torque Widgets — add independent gauges from your home screen widget picker.");l.addView(t);setContentView(l);return;}prefs=getSharedPreferences("gauge"+id,0);buildColumns();
+ private void sizeRow(TextView caption, String labelId) {
+  LinearLayout row = new LinearLayout(this);
+  panel.addView(row);
+  row.addView(caption, new LinearLayout.LayoutParams(0, -2, 1));
+  Spinner size = new Spinner(this);
+  size.setContentDescription(caption.getText() + " font size");
+  int[] sizes = {0, 16, 20, 24, 28, 32, 36, 42, 48, 56, 64, 80, 96, 112, 128, 150, 175, 200};
+  String[] options = new String[sizes.length];
+  int selected = 0;
+  String key = GaugeLabels.key(labelId, "size");
+  for (int i = 0; i < sizes.length; i++) {
+   options[i] = sizes[i] == 0 ? "Default" : Integer.toString(sizes[i]);
+   if (sizes[i] == prefs.getInt(key, 0)) selected = i;
+  }
+  size.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, options));
+  row.addView(size, new LinearLayout.LayoutParams(0, -2, 1));
+  size.setSelection(selected);
+  size.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+   public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) {
+    previewSetting(key, sizes[index]);
+   }
+   public void onNothingSelected(AdapterView<?> parent) {}
+  });
+ }
+
+ private void sizeRow(String title, String labelId) {
+  TextView caption = new TextView(this);
+  caption.setText(title);
+  sizeRow(caption, labelId);
+ }
+
+ EditText field(String key, String fallback) {
+  TextView caption = new TextView(this);
+  caption.setText(key);
+  if (key.equals("Name")) sizeRow(caption, "title");
+  else if (key.equals("Units")) sizeRow(caption, "units");
+  else panel.addView(caption);
+  EditText edit = new EditText(this);
+  edit.setSingleLine(true);
+  edit.setText(prefs.getString(key, fallback));
+  panel.addView(edit);
+  previewSettings.put(key, edit.getText().toString());
+  watch(edit, value -> previewSetting(key, value));
+  if (key.endsWith("color")) {
+   edit.setFocusable(false);
+   edit.setOnClickListener(v -> pickColor(key, edit));
+  }
+  return edit;
+ }
+ public void onCreate(Bundle b){super.onCreate(b);id=getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,-1);setResult(RESULT_CANCELED);if(id<0){LinearLayout l=new LinearLayout(this);l.setOrientation(1);TextView t=new TextView(this);t.setText("Torque Widgets — add independent gauges from your home screen widget picker.");l.addView(t);setContentView(l);return;}prefs=getSharedPreferences("gauge"+id,0);previewSettings.putAll(prefs.getAll());buildColumns();
  String[] keys={"Name","PID","Minimum","Maximum","Units","Multiplier","Offset","Font color","Tick color","Indicator color","Needle color"};String[] defaults={"Coolant","05","0","260","°F","1.8","32","#84D5FF","#84D5FF","#84D5FF","#84D5FF"};EditText[] fields=new EditText[keys.length];for(int i=0;i<keys.length;i++)fields[i]=field(keys[i],defaults[i]);Switch circle=new Switch(this);circle.setText("Circular gauge (off = semicircle)");circle.setChecked(prefs.getBoolean("circle",false));panel.addView(circle);previewSettings.put("circle",circle.isChecked());circle.setOnCheckedChangeListener((v,checked)->previewSetting("circle",checked));Switch info=new Switch(this);info.setText("Display information only");info.setChecked(prefs.getBoolean("info",false));panel.addView(info);previewSettings.put("info",info.isChecked());info.setOnCheckedChangeListener((v,checked)->previewSetting("info",checked));Spinner style=new Spinner(this);style.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Illuminated segments","Sweeping needle","Continuous arc","None"}));style.setSelection(prefs.getInt("style",0));panel.addView(style);previewSettings.put("style",style.getSelectedItemPosition());
  style.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
   public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) { previewSetting("style",index); }
   public void onNothingSelected(AdapterView<?> parent) {}
  });
- Button save=new Button(this);save.setText("Save");panel.addView(save);save.setOnClickListener(v->{try{float min=Float.parseFloat(fields[2].getText().toString()),max=Float.parseFloat(fields[3].getText().toString());if(!Float.isFinite(min)||!Float.isFinite(max)||max<=min)throw new Exception();for(int i=5;i<7;i++)if(!Float.isFinite(Float.parseFloat(fields[i].getText().toString())))throw new Exception();for(int i=7;i<keys.length;i++)android.graphics.Color.parseColor(fields[i].getText().toString());if(fields[1].getText().toString().trim().isEmpty())throw new Exception();SharedPreferences.Editor ed=prefs.edit();for(int i=0;i<keys.length;i++)ed.putString(keys[i],fields[i].getText().toString().trim());ed.putBoolean("circle",circle.isChecked()).putBoolean("info",info.isChecked()).putInt("style",style.getSelectedItemPosition()).apply();Intent result=new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,id);setResult(RESULT_OK,result);sendBroadcast(new Intent(this,CoolantWidget.class).setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE).putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS,new int[]{id}));finish();}catch(Exception ex){Toast.makeText(this,"Check range, conversion and hex colors",Toast.LENGTH_LONG).show();}});}
+ sizeRow("Current reading", "reading");
+ sizeRow("NO DATA message", "noData");
+ for (int i = 0; i < 9; i++) sizeRow("Scale number " + (i + 1), "scale" + i);
+ Button save=new Button(this);save.setText("Save");panel.addView(save);save.setOnClickListener(v->{try{float min=Float.parseFloat(fields[2].getText().toString()),max=Float.parseFloat(fields[3].getText().toString());if(!Float.isFinite(min)||!Float.isFinite(max)||max<=min)throw new Exception();for(int i=5;i<7;i++)if(!Float.isFinite(Float.parseFloat(fields[i].getText().toString())))throw new Exception();for(int i=7;i<keys.length;i++)android.graphics.Color.parseColor(fields[i].getText().toString());if(fields[1].getText().toString().trim().isEmpty())throw new Exception();SharedPreferences.Editor ed=prefs.edit();
+ for (Map.Entry<String, Object> entry : previewSettings.entrySet()) {
+  if (!entry.getKey().startsWith("label.")) continue;
+  Object value = entry.getValue();
+  if (value instanceof Float) ed.putFloat(entry.getKey(), (Float) value);
+  if (value instanceof Integer) ed.putInt(entry.getKey(), (Integer) value);
+ }
+ for(int i=0;i<keys.length;i++)ed.putString(keys[i],fields[i].getText().toString().trim());ed.putBoolean("circle",circle.isChecked()).putBoolean("info",info.isChecked()).putInt("style",style.getSelectedItemPosition()).apply();Intent result=new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,id);setResult(RESULT_OK,result);sendBroadcast(new Intent(this,CoolantWidget.class).setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE).putExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS,new int[]{id}));finish();}catch(Exception ex){Toast.makeText(this,"Check range, conversion and hex colors",Toast.LENGTH_LONG).show();}});}
 
  void pickColor(String key, EditText target){
   String previous = target.getText().toString();

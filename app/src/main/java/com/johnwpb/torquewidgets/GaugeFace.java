@@ -34,7 +34,7 @@ final class GaugeFace {
         }
     }
 
-    static void draw(Canvas canvas, Map<String, ?> settings, float value) {
+    static void draw(Canvas canvas, Map<String, ?> settings, float value, GaugeLabels.HitAreas hits) {
         float min = number(settings, "Minimum", 0), max = number(settings, "Maximum", 260);
         int font = color(settings, "Font color", BLUE);
         boolean circle = Boolean.TRUE.equals(settings.get("circle"));
@@ -43,19 +43,21 @@ final class GaugeFace {
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
         paint.setTextAlign(Paint.Align.CENTER);
         paint.setTypeface(TYPEFACE);
-        if (!info) drawScale(canvas, paint, settings, value, min, max, circle, font);
+        if (!info) drawScale(canvas, paint, settings, value, min, max, circle, font, hits);
         paint.setColor(font);
-        paint.setTextSize(info || !circle ? 150 : 105);
-        canvas.drawText(valid ? Integer.toString(Math.round(value)) : "--", 400,
-                info ? 420 : circle ? 425 : 610, paint);
-        paint.setTextSize(48);
-        canvas.drawText(text(settings, "Units", "°F"), 400, info ? 490 : circle ? 485 : 670, paint);
-        paint.setTextSize(32);
-        canvas.drawText(text(settings, "Name", "Coolant"), 400, info ? 550 : circle ? 545 : 735, paint);
+        GaugeLabels.draw(canvas, paint, settings, hits, "reading",
+                valid ? Integer.toString(Math.round(value)) : "--", 400,
+                info ? 420 : circle ? 425 : 610, info || !circle ? 150 : 105);
+        GaugeLabels.draw(canvas, paint, settings, hits, "units", text(settings, "Units", "°F"),
+                400, info ? 490 : circle ? 485 : 670, 48);
+        GaugeLabels.draw(canvas, paint, settings, hits, "title", text(settings, "Name", "Coolant"),
+                400, info ? 550 : circle ? 545 : 735, 32);
+        if (!valid) GaugeLabels.draw(canvas, paint, settings, hits, "noData", "NO DATA",
+                400, circle ? 580 : 770, 23);
     }
 
     private static void drawScale(Canvas canvas, Paint paint, Map<String, ?> settings, float value,
-                                  float min, float max, boolean circle, int font) {
+                                  float min, float max, boolean circle, int font, GaugeLabels.HitAreas hits) {
         float y = circle ? 400 : 425, start = circle ? 135 : 180, sweep = circle ? 270 : 180;
         int tick = color(settings, "Tick color", BLUE);
         int indicator = color(settings, "Indicator color", BLUE);
@@ -70,10 +72,10 @@ final class GaugeFace {
             line(canvas, paint, y, angle, major ? 270 : 285, 310);
             if (major) {
                 paint.setColor(font);
-                paint.setTextSize(30);
-                canvas.drawText(Integer.toString(Math.round(min + range * i / 40)),
+                GaugeLabels.draw(canvas, paint, settings, hits, "scale" + i / 5,
+                        Integer.toString(Math.round(min + range * i / 40)),
                         400 + (float) Math.cos(angle) * 350,
-                        y + (float) Math.sin(angle) * 350 + 10, paint);
+                        y + (float) Math.sin(angle) * 350 + 10, 30);
             }
         }
         Object style = settings.get("style");
