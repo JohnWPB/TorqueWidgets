@@ -264,7 +264,7 @@ public class GaugeSettings extends Activity {
   getWindow().setNavigationBarColor(PAGE);
   id = getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1);
   setResult(RESULT_CANCELED);
-  if (id < 0) {
+  if (id < 0 && !(this instanceof DashboardGaugeSettings && id < -1)) {
    LinearLayout root = column();
    root.setBackgroundColor(PAGE);
    root.setPadding(dp(16), dp(16), dp(16), dp(16));
@@ -523,6 +523,11 @@ public class GaugeSettings extends Activity {
    else if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
   }
   editor.apply();
+  if (this instanceof DashboardGaugeSettings) {
+   setResult(RESULT_OK);
+   finish();
+   return;
+  }
   if (GpsMetric.selected(previewSettings) != null
           && locationGranted(android.Manifest.permission.ACCESS_FINE_LOCATION)) {
    try {

@@ -4,6 +4,12 @@ public class CoolantWidget extends AppWidgetProvider {
  static SharedPreferences prefs(Context c,int id){return c.getSharedPreferences("gauge"+id,0);}
  @Override public void onUpdate(Context context, AppWidgetManager manager, int[] ids) {
   PendingResult pending = goAsync();
+  query(context, ids, false, (id, value) -> render(context, manager, id, value),
+          () -> { if (pending != null) pending.finish(); });
+ }
+
+ static void query(Context context, int[] ids, boolean includeGps,
+                   java.util.function.BiConsumer<Integer, Float> result, Runnable complete) {
   Context app = context.getApplicationContext();
   Handler handler = new Handler(Looper.getMainLooper());
   java.util.List<Integer> torque = new java.util.ArrayList<>();
@@ -11,21 +17,21 @@ public class CoolantWidget extends AppWidgetProvider {
   for (int id : ids) {
    GpsMetric metric = GpsMetric.selected(prefs(app, id).getAll());
    if (metric == null) torque.add(id);
-   else if (!GpsWidgetService.running) gps.put(id, metric);
+   else if (includeGps || !GpsWidgetService.running) gps.put(id, metric);
   }
   int[] remaining = {(torque.isEmpty() ? 0 : 1) + (gps.isEmpty() ? 0 : 1)};
   if (remaining[0] == 0) {
-   if (pending != null) pending.finish();
+   complete.run();
    return;
   }
   Runnable completed = () -> {
-   if (--remaining[0] == 0 && pending != null) pending.finish();
+   if (--remaining[0] == 0) complete.run();
   };
   if (!gps.isEmpty()) {
    GpsSample.request(app, handler, gps.containsValue(GpsMetric.SIGNAL), (location, strength) -> {
     try {
      for (java.util.Map.Entry<Integer, GpsMetric> item : gps.entrySet()) {
-      render(app, manager, item.getKey(), item.getValue().read(location, strength));
+      result.accept(item.getKey(), item.getValue().read(location, strength));
      }
     } finally {
      completed.run();
@@ -52,11 +58,11 @@ public class CoolantWidget extends AppWidgetProvider {
                 + Float.parseFloat(settings.getString("Offset", "32"));
        }
       } catch (Exception ignored) { }
-      render(app, manager, id, value);
+      result.accept(id, value);
      }
     } finally {
-     if (bound) app.unbindService(this);
-     completed.run();
+     try { if (bound) app.unbindService(this); }
+     finally { completed.run(); }
     }
    }
 
