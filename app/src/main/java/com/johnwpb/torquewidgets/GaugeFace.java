@@ -50,7 +50,8 @@ final class GaugeFace {
         GaugeLabels.draw(canvas, paint, settings, hits, "reading",
                 GpsMetric.reading(metric, value), 400,
                 info ? 420 : circle ? 425 : 610, info || !circle ? 150 : 105);
-        GaugeLabels.draw(canvas, paint, settings, hits, "units", metric == null ? text(settings, "Units", "°F") : metric.units,
+        GaugeLabels.draw(canvas, paint, settings, hits, "units",
+                metric == null ? TemperatureUnit.displayUnits(settings) : metric.units,
                 400, info ? 490 : circle ? 485 : 670, 48);
         GaugeLabels.draw(canvas, paint, settings, hits, "title", GpsMetric.title(metric, text(settings, "Name", "Coolant")),
                 400, info ? 550 : circle ? 545 : 735, 32);

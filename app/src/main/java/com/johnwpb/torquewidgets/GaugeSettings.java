@@ -35,6 +35,8 @@ public class GaugeSettings extends Activity {
  private Switch editImage;
  private Button fitImage, locationAccess;
  private LinearLayout gpsControls, pidControls;
+ private Button temperatureUnits;
+ private EditText customUnits, minimum, maximum;
  private static final int LOCATION_PERMISSION = 802;
 
  private void watch(EditText field, java.util.function.Consumer<String> change) {
@@ -295,6 +297,29 @@ public class GaugeSettings extends Activity {
   return edit;
  }
 
+ private void addUnitsControls() {
+  customUnits = field("Units", "°F");
+  TemperatureUnit[] units = TemperatureUnit.values();
+  String[] choices = {units[0].label, units[1].label};
+  temperatureUnits = dropdownButton("Units", choices, TemperatureUnit.configured(previewSettings).ordinal(), 14,
+          index -> selectTemperatureUnit(units[index]));
+  LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-2, -2);
+  layout.setMargins(0, dp(4), 0, dp(10));
+  section.addView(temperatureUnits, layout);
+ }
+
+ private void selectTemperatureUnit(TemperatureUnit unit) {
+  TemperatureUnit previous = TemperatureUnit.configured(previewSettings);
+  if (previous != unit) {
+   for (EditText range : new EditText[]{minimum, maximum}) {
+    float value = GaugeFace.number(previewSettings, range == minimum ? "Minimum" : "Maximum", Float.NaN);
+    float converted = previous.convertTo(value, unit);
+    if (Float.isFinite(converted)) range.setText(Float.toString(converted));
+   }
+  }
+  previewSetting(TemperatureUnit.KEY, unit.name());
+ }
+
  private LinearLayout colorRow() {
   LinearLayout row = new LinearLayout(this);
   row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
@@ -382,7 +407,7 @@ public class GaugeSettings extends Activity {
 
   startSection("Labels");
   field("Name", "Coolant");
-  field("Units", "°F");
+  addUnitsControls();
   sizeRow("Reading", "reading", automaticReadingFontSize());
   sizeRow("Display no data when information is unavailable", "noData", 23);
 
@@ -412,11 +437,10 @@ public class GaugeSettings extends Activity {
   pidControls = column();
   provider.addView(pidControls);
   section = pidControls;
-  field("PID", "05");
-  field("Minimum", "0");
-  field("Maximum", "260");
-  field("Multiplier", "1.8");
-  field("Offset", "32");
+  EditText pid = field("PID", "05");
+  watch(pid, value -> updateUnitsControls());
+  minimum = field("Minimum", "0");
+  maximum = field("Maximum", "260");
   gpsControls = column();
   provider.addView(gpsControls);
   section = gpsControls;
@@ -561,11 +585,19 @@ public class GaugeSettings extends Activity {
   boolean gps = GpsMetric.selected(previewSettings) != null;
   gpsControls.setVisibility(gps ? View.VISIBLE : View.GONE);
   pidControls.setVisibility(gps ? View.GONE : View.VISIBLE);
+  updateUnitsControls();
   boolean fine = locationGranted(android.Manifest.permission.ACCESS_FINE_LOCATION);
   boolean background = Build.VERSION.SDK_INT < 29
           || locationGranted(android.Manifest.permission.ACCESS_BACKGROUND_LOCATION);
   locationAccess.setVisibility(fine && background ? View.GONE : View.VISIBLE);
   locationAccess.setText(fine ? "Allow GPS on home screen" : "Allow precise GPS");
+ }
+
+ private void updateUnitsControls() {
+  boolean gps = GpsMetric.selected(previewSettings) != null;
+  boolean temperature = TemperatureUnit.isTemperaturePid(GaugeFace.text(previewSettings, "PID", "05"));
+  temperatureUnits.setVisibility(!gps && temperature ? View.VISIBLE : View.GONE);
+  customUnits.setVisibility(!gps && !temperature ? View.VISIBLE : View.GONE);
  }
 
  @Override protected void onResume() {
@@ -607,11 +639,9 @@ public class GaugeSettings extends Activity {
   float min = GaugeFace.number(previewSettings, "Minimum", Float.NaN);
   float max = GaugeFace.number(previewSettings, "Maximum", Float.NaN);
   boolean valid = Float.isFinite(max - min) && max > min
-          && Float.isFinite(GaugeFace.number(previewSettings, "Multiplier", Float.NaN))
-          && Float.isFinite(GaugeFace.number(previewSettings, "Offset", Float.NaN))
           && !GaugeFace.text(previewSettings, "PID", "").trim().isEmpty();
   if (GpsMetric.selected(previewSettings) == null && !valid) {
-   Toast.makeText(this, "Check the range, conversion and Torque PID.", Toast.LENGTH_LONG).show();
+   Toast.makeText(this, "Check the range and Torque PID.", Toast.LENGTH_LONG).show();
    return;
   }
   for (String key : new String[]{"Font color", "Tick color", "Indicator color", "Needle color"}) {

@@ -92,9 +92,13 @@ public final class DashboardWidget extends AppWidgetProvider {
         Canvas canvas = new Canvas(bitmap);
         List<DashboardLayout.Gauge> gauges = DashboardLayout.read(context, id);
         for (DashboardLayout.Gauge gauge : gauges) {
-            DashboardLayout.draw(canvas, gauge.bounds(width, height),
-                    CoolantWidget.prefs(context, gauge.id).getAll(),
-                    GaugeBackground.read(context, gauge.id), readings.getOrDefault(gauge.id, Float.NaN));
+            Map<String, ?> settings = CoolantWidget.prefs(context, gauge.id).getAll();
+            float reading = readings.getOrDefault(gauge.id, Float.NaN);
+            if (GpsMetric.selected(settings) == null) {
+                reading = TemperatureUnit.displayReading(settings, reading);
+            }
+            DashboardLayout.draw(canvas, gauge.bounds(width, height), settings,
+                    GaugeBackground.read(context, gauge.id), reading);
         }
         if (gauges.isEmpty()) {
             Paint text = new Paint(Paint.ANTI_ALIAS_FLAG);
