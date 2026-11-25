@@ -88,6 +88,7 @@ public final class DashboardSettings extends Activity {
         front = button(layers, "Bring to front", () -> layer(true));
         remove = button(layers, "Remove", this::removeSelected);
         LinearLayout footer = row(root);
+        button(footer, "Make a backup", () -> GaugeBackup.share(this));
         button(footer, "Cancel", this::finish);
         Button save = button(footer, "Save dashboard", this::save);
         save.setTextColor(GaugeFace.BLUE);

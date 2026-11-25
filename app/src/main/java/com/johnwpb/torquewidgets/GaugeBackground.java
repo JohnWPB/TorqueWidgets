@@ -10,6 +10,7 @@ import java.util.Map;
 import android.net.Uri;
 import android.util.AtomicFile;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,6 +18,16 @@ import java.io.InputStream;
 final class GaugeBackground {
     private static AtomicFile file(Context context, int id) {
         return new AtomicFile(new File(context.getFilesDir(), "gauge-background-" + id + ".png"));
+    }
+
+    static InputStream openSaved(Context context, int id) throws IOException {
+        AtomicFile background = file(context, id);
+        try {
+            return background.openRead();
+        } catch (FileNotFoundException e) {
+            if (background.getBaseFile().exists()) throw e;
+            return null;
+        }
     }
 
     static Bitmap open(ContentResolver resolver, Uri uri) throws IOException {
