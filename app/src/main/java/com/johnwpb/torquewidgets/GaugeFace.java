@@ -64,13 +64,17 @@ final class GaugeFace {
         float range = max - min;
         float fraction = Float.isFinite(value) && Float.isFinite(range) && range > 0
                 ? Math.max(0, Math.min(1, (value - min) / range)) : 0;
+        boolean showTicks = !Boolean.FALSE.equals(settings.get("showTicks"));
+        boolean showScale = !Boolean.FALSE.equals(settings.get("showScale"));
         for (int i = 0; i <= 40; i++) {
             double angle = Math.toRadians(start + sweep * i / 40);
             boolean major = i % 5 == 0;
-            paint.setColor(tick);
-            paint.setStrokeWidth(major ? 12 : 6);
-            line(canvas, paint, y, angle, major ? 270 : 285, 310);
-            if (major) {
+            if (showTicks) {
+                paint.setColor(tick);
+                paint.setStrokeWidth(major ? 12 : 6);
+                line(canvas, paint, y, angle, major ? 270 : 285, 310);
+            }
+            if (major && showScale) {
                 paint.setColor(font);
                 GaugeLabels.draw(canvas, paint, settings, hits, "scale" + i / 5,
                         Integer.toString(Math.round(min + range * i / 40)),

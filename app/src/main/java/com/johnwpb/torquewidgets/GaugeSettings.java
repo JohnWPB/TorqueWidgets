@@ -1,6 +1,8 @@
 package com.johnwpb.torquewidgets;
 import android.content.res.ColorStateList;
+import android.graphics.Bitmap;
 import android.graphics.Typeface;
+import java.io.IOException;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.view.Gravity;
@@ -25,6 +27,10 @@ public class GaugeSettings extends Activity {
  private GaugePreview preview;
  private Runnable cancelColor;
  private int settingsScroll;
+ private static final int PICK_BACKGROUND = 801;
+ private Switch indicatorNumbers, scaleNumbers;
+ private Button removeBackground;
+ private boolean backgroundChanged;
 
  private void watch(EditText field, java.util.function.Consumer<String> change) {
   field.addTextChangedListener(new android.text.TextWatcher() {
@@ -136,6 +142,18 @@ public class GaugeSettings extends Activity {
    preview.invalidate();
   });
   right.addView(preview, new LinearLayout.LayoutParams(-1, 0, 1));
+  preview.backgroundImage = GaugeBackground.read(this, id);
+  Button browse = action("Browse background", false);
+  browse.setOnClickListener(view -> {
+   Intent picker = new Intent(Intent.ACTION_OPEN_DOCUMENT).setType("image/*")
+           .addCategory(Intent.CATEGORY_OPENABLE);
+   startActivityForResult(picker, PICK_BACKGROUND);
+  });
+  right.addView(browse, new LinearLayout.LayoutParams(-1, -2));
+  removeBackground = action("Remove background", false);
+  removeBackground.setVisibility(preview.backgroundImage == null ? View.GONE : View.VISIBLE);
+  removeBackground.setOnClickListener(view -> setBackgroundImage(null));
+  right.addView(removeBackground, new LinearLayout.LayoutParams(-1, -2));
   LinearLayout.LayoutParams previewLayout = new LinearLayout.LayoutParams(0, -1, 1);
   previewLayout.setMargins(dp(6), 0, dp(12), dp(8));
   columns.addView(right, previewLayout);
@@ -252,7 +270,10 @@ public class GaugeSettings extends Activity {
   sizeRow("No data", "noData");
 
   startSection("Gauge");
-  toggle("circle", "Circular gauge", false);
+  dropdown("Gauge style", new String[]{"Semicircular", "Circular"},
+          prefs.getBoolean("circle", false) ? 1 : 0, index -> previewSetting("circle", index == 1));
+  toggle("showTicks", "Show tick marks", true);
+  indicatorNumbers = scaleSwitch("Show indicator numbers");
   toggle("info", "Information only", false);
   section.addView(text("Indicator style", 14, TEXT, true));
   Spinner style = new Spinner(this);
@@ -277,6 +298,7 @@ public class GaugeSettings extends Activity {
   field("Multiplier", "1.8");
   field("Offset", "32");
   startSection("Scale numbers");
+  scaleNumbers = scaleSwitch("Show all scale numbers");
   for (int i = 0; i < 9; i++) sizeRow("Number " + (i + 1), "scale" + i);
 
   Button cancel = action("Cancel", false);
@@ -287,6 +309,55 @@ public class GaugeSettings extends Activity {
   LinearLayout.LayoutParams saveLayout = new LinearLayout.LayoutParams(dp(96), -2);
   saveLayout.leftMargin = dp(8);
   footer.addView(save, saveLayout);
+ }
+
+ private void dropdown(String title, String[] choices, int selected, java.util.function.IntConsumer change) {
+  TextView caption = text(title, 14, TEXT, true);
+  section.addView(caption);
+  Spinner menu = new Spinner(this);
+  menu.setId(View.generateViewId());
+  caption.setLabelFor(menu.getId());
+  menu.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, choices));
+  menu.setSelection(selected);
+  section.addView(menu, new LinearLayout.LayoutParams(-1, dp(48)));
+  menu.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+   public void onItemSelected(AdapterView<?> parent, View view, int index, long itemId) {
+    change.accept(index);
+   }
+   public void onNothingSelected(AdapterView<?> parent) {}
+  });
+ }
+
+ private Switch scaleSwitch(String title) {
+  Switch control = new Switch(this);
+  control.setText(title);
+  styleSwitch(control);
+  control.setChecked(!Boolean.FALSE.equals(previewSettings.get("showScale")));
+  control.setOnCheckedChangeListener((button, checked) -> {
+   if (Boolean.valueOf(checked).equals(previewSettings.get("showScale"))) return;
+   previewSetting("showScale", checked);
+   indicatorNumbers.setChecked(checked);
+   scaleNumbers.setChecked(checked);
+  });
+  section.addView(control);
+  return control;
+ }
+
+ @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+  super.onActivityResult(requestCode, resultCode, data);
+  if (requestCode != PICK_BACKGROUND || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+  try {
+   setBackgroundImage(GaugeBackground.open(getContentResolver(), data.getData()));
+  } catch (IOException | SecurityException e) {
+   Toast.makeText(this, "Choose a readable 800 × 800 image.", Toast.LENGTH_LONG).show();
+  }
+ }
+
+ private void setBackgroundImage(Bitmap image) {
+  preview.backgroundImage = image;
+  backgroundChanged = true;
+  removeBackground.setVisibility(image == null ? View.GONE : View.VISIBLE);
+  preview.invalidate();
  }
 
  private void toggle(String key, String title, boolean fallback) {
@@ -315,6 +386,14 @@ public class GaugeSettings extends Activity {
     android.graphics.Color.parseColor(GaugeFace.text(previewSettings, key, "").trim());
    } catch (IllegalArgumentException e) {
     Toast.makeText(this, "Check the gauge colors.", Toast.LENGTH_LONG).show();
+    return;
+   }
+  }
+  if (backgroundChanged) {
+   try {
+    GaugeBackground.save(this, id, preview.backgroundImage);
+   } catch (IOException e) {
+    Toast.makeText(this, "Could not save the background image.", Toast.LENGTH_LONG).show();
     return;
    }
   }

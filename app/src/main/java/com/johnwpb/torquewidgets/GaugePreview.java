@@ -1,6 +1,7 @@
 package com.johnwpb.torquewidgets;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.RectF;
 import android.view.MotionEvent;
@@ -17,6 +18,7 @@ final class GaugePreview extends View {
     private float scale, left, downX, downY;
     private boolean moved;
     boolean noData;
+    Bitmap backgroundImage;
 
     GaugePreview(Context context, Map<String, Object> settings) {
         super(context);
@@ -36,6 +38,7 @@ final class GaugePreview extends View {
         canvas.save();
         canvas.translate(left, 0);
         canvas.scale(scale, scale);
+        GaugeBackground.draw(canvas, backgroundImage);
         GaugeFace.draw(canvas, settings, noData ? Float.NaN : sample,
                 (id, x, baseline, bounds) -> labels.add(new Label(id, x, baseline, bounds)));
         canvas.restore();
