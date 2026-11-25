@@ -82,8 +82,8 @@ final class BackupActions<T> {
                 Uri uri = BackupShareProvider.uri(activity, file);
                 Intent intent = new Intent(Intent.ACTION_SEND).setType(BackupShareProvider.MIME)
                         .putExtra(Intent.EXTRA_STREAM, uri)
-                        .setClipData(ClipData.newUri(activity.getContentResolver(), "Torque settings", uri))
                         .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                intent.setClipData(ClipData.newUri(activity.getContentResolver(), "Torque settings", uri));
                 activity.startActivity(Intent.createChooser(intent, "Share Torque settings"));
             } else {
                 pendingExport = file;
