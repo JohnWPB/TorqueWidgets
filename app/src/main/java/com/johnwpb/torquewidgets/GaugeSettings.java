@@ -235,10 +235,13 @@ public class GaugeSettings extends Activity {
  }
 
  EditText field(String key, String fallback) {
-  TextView caption = text(key.equals("Name") ? "Gauge title" : key, 14, TEXT, true);
-  if (key.equals("Name")) sizeRow(caption, "title");
-  else if (key.equals("Units")) sizeRow(caption, "units");
-  else section.addView(caption);
+  boolean colorField = key.endsWith("color");
+  if (!colorField) {
+   TextView caption = text(key.equals("Name") ? "Gauge title" : key, 14, TEXT, true);
+   if (key.equals("Name")) sizeRow(caption, "title");
+   else if (key.equals("Units")) sizeRow(caption, "units");
+   else section.addView(caption);
+  }
   EditText edit = new EditText(this);
   edit.setSingleLine(true);
   edit.setText(prefs.getString(key, fallback));
@@ -249,15 +252,76 @@ public class GaugeSettings extends Activity {
   edit.setMinHeight(dp(44));
   LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-1, -2);
   layout.setMargins(0, dp(4), 0, dp(10));
-  section.addView(edit, layout);
+  if (!colorField) section.addView(edit, layout);
   previewSettings.put(key, edit.getText().toString());
   watch(edit, value -> previewSetting(key, value));
-  if (key.endsWith("color")) {
-   edit.setFocusable(false);
-   edit.setOnClickListener(v -> pickColor(key, edit));
-  }
   return edit;
  }
+
+ private LinearLayout colorRow() {
+  LinearLayout row = new LinearLayout(this);
+  row.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+  section.addView(row, new LinearLayout.LayoutParams(-2, -2));
+  return row;
+ }
+
+ private void addColorRowSwitch(LinearLayout row, Switch control) {
+  CharSequence title = control.getText();
+  control.setText("");
+  control.setContentDescription(title);
+  row.addView(control, new LinearLayout.LayoutParams(-2, -2));
+  TextView caption = text(title.toString(), 14, TEXT, false);
+  caption.setOnClickListener(view -> control.performClick());
+  LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-2, -2, 1);
+  layout.setMarginStart(dp(6));
+  row.addView(caption, layout);
+ }
+
+ private Button addColorButton(LinearLayout row, String colorName, Runnable openPicker) {
+  Button button = action("Choose Color", false);
+  button.setTextSize(12);
+  button.setMinWidth(0);
+  button.setMinimumWidth(0);
+  button.setPadding(dp(8), 0, dp(8), 0);
+  button.setContentDescription("Choose " + colorName);
+  button.setOnClickListener(view -> openPicker.run());
+  LinearLayout.LayoutParams layout = new LinearLayout.LayoutParams(-2, -2);
+  layout.setMarginStart(dp(6));
+  row.addView(button, layout);
+  return button;
+ }
+
+ private void indicatorStyleRow() {
+  String title = "Indicator style";
+  TextView caption = text(title, 14, TEXT, true);
+  section.addView(caption);
+  LinearLayout row = colorRow();
+  String[] styles = {"Illuminated segments", "Sweeping needle", "Continuous arc", "None"};
+  int savedStyle = prefs.getInt("style", 0);
+  int selected = Math.max(0, Math.min(styles.length - 1, savedStyle));
+  EditText indicatorColor = field("Indicator color", "#84D5FF");
+  EditText needleColor = field("Needle color", "#84D5FF");
+  Button chooseColor = addColorButton(row, "indicator color", () -> {
+   Object style = previewSettings.get("style");
+   if (Integer.valueOf(1).equals(style)) pickColor("Needle color", needleColor);
+   else pickColor("Indicator color", indicatorColor);
+  });
+  java.util.function.IntConsumer showColorControl = index -> {
+   boolean needle = index == 1;
+   chooseColor.setVisibility(index == 3 ? View.GONE : View.VISIBLE);
+   chooseColor.setContentDescription(needle ? "Choose needle color" : "Choose indicator color");
+  };
+  Button menu = dropdownButton(title, styles, selected, 14, index -> {
+   previewSetting("style", index);
+   showColorControl.accept(index);
+  });
+  menu.setEllipsize(android.text.TextUtils.TruncateAt.END);
+  menu.setId(View.generateViewId());
+  caption.setLabelFor(menu.getId());
+  row.addView(menu, 0, new LinearLayout.LayoutParams(-2, -2, 1));
+  showColorControl.accept(selected);
+ }
+
  @Override public void onCreate(Bundle state) {
   super.onCreate(state);
   getWindow().setStatusBarColor(PAGE);
@@ -288,15 +352,17 @@ public class GaugeSettings extends Activity {
   startSection("Gauge");
   dropdown("Gauge style", new String[]{"Semicircular", "Circular"},
           prefs.getBoolean("circle", false) ? 1 : 0, index -> previewSetting("circle", index == 1));
-  toggle("showTicks", "Show tick marks", true);
+  LinearLayout ticks = colorRow();
+  addColorRowSwitch(ticks, toggle("showTicks", "Show tick marks", true));
+  EditText tickColor = field("Tick color", "#84D5FF");
+  addColorButton(ticks, "tick color", () -> pickColor("Tick color", tickColor));
+  LinearLayout numbers = colorRow();
   indicatorNumbers = scaleSwitch("Show indicator numbers");
-  toggle("info", "Information only", false);
-  dropdown("Indicator style", new String[]{"Illuminated segments", "Sweeping needle", "Continuous arc", "None"},
-          prefs.getInt("style", 0), index -> previewSetting("style", index));
-  startSection("Colors");
-  for (String key : new String[]{"Font color", "Tick color", "Indicator color", "Needle color"}) {
-   field(key, "#84D5FF");
-  }
+  addColorRowSwitch(numbers, indicatorNumbers);
+  EditText fontColor = field("Font color", "#84D5FF");
+  addColorButton(numbers, "shared font color", () -> pickColor("Font color", fontColor));
+  section.addView(toggle("info", "Information only", false));
+  indicatorStyleRow();
   startSection("Information provider");
   boolean useGps = GpsMetric.selected(previewSettings) != null;
   dropdown("Information provider", new String[]{"PID", "GPS information"}, useGps ? 1 : 0, index -> {
@@ -327,6 +393,7 @@ public class GaugeSettings extends Activity {
   updateProvider();
   startSection("Scale numbers");
   scaleNumbers = scaleSwitch("Show all scale numbers");
+  section.addView(scaleNumbers);
   for (int i = 0; i < 9; i++) sizeRow("Number " + (i + 1), "scale" + i);
 
   startSection("Backup");
@@ -406,7 +473,6 @@ public class GaugeSettings extends Activity {
    indicatorNumbers.setChecked(checked);
    scaleNumbers.setChecked(checked);
   });
-  section.addView(control);
   return control;
  }
 
@@ -481,14 +547,14 @@ public class GaugeSettings extends Activity {
           .show();
  }
 
- private void toggle(String key, String title, boolean fallback) {
+ private Switch toggle(String key, String title, boolean fallback) {
   Switch control = new Switch(this);
   control.setText(title);
   styleSwitch(control);
   control.setChecked(prefs.getBoolean(key, fallback));
   previewSettings.put(key, control.isChecked());
   control.setOnCheckedChangeListener((view, value) -> previewSetting(key, value));
-  section.addView(control);
+  return control;
  }
 
  private void save() {
