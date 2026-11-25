@@ -22,6 +22,7 @@ public class GaugeSettings extends Activity {
  private SharedPreferences prefs;
  private LinearLayout panel, section, footer;
  private final Map<String, Object> previewSettings = new HashMap<>();
+ private Runnable refreshReadingFontSize;
  private ScrollView scroll;
  private LinearLayout picker;
  private GaugePreview preview;
@@ -47,6 +48,11 @@ public class GaugeSettings extends Activity {
  private void previewSetting(String key, Object value) {
   previewSettings.put(key, value);
   preview.invalidate();
+ }
+
+ private void previewGaugeMode(String key, boolean value) {
+  previewSetting(key, value);
+  refreshReadingFontSize.run();
  }
 
  private int dp(int size) {
@@ -198,48 +204,79 @@ public class GaugeSettings extends Activity {
   else super.onBackPressed();
  }
 
- private void sizeRow(TextView caption, String labelId) {
+ private int automaticReadingFontSize() {
+  boolean circle = Boolean.TRUE.equals(previewSettings.get("circle"));
+  boolean informationOnly = Boolean.TRUE.equals(previewSettings.get("info"));
+  return circle && !informationOnly ? 105 : 150;
+ }
+
+ private void sizeRow(TextView caption, String labelId, int automaticSize) {
   LinearLayout row = new LinearLayout(this);
   section.addView(row);
   row.setGravity(Gravity.CENTER_VERTICAL);
   row.setMinimumHeight(dp(48));
   row.addView(caption, new LinearLayout.LayoutParams(0, -2, 1));
-  TextView font = text("Font:", 12, MUTED, false);
+  boolean showCurrentSize = automaticSize > 0;
+  TextView font = text(showCurrentSize ? "Font size:" : "Font:", 12, MUTED, false);
   row.addView(font);
-  int[] sizes = {0, 16, 20, 24, 28, 32, 36, 42, 48, 56, 64, 80, 96, 112, 128, 150, 175, 200};
-  String[] options = new String[sizes.length];
-  int selected = 0;
+  int[] presets = {0, 16, 20, 24, 28, 32, 36, 42, 48, 56, 64, 80, 96, 112, 128, 150, 175, 200};
   String key = GaugeLabels.key(labelId, "size");
-  for (int i = 0; i < sizes.length; i++) {
-   options[i] = sizes[i] == 0 ? "Default" : Integer.toString(sizes[i]);
-   if (sizes[i] == prefs.getInt(key, 0)) selected = i;
+  int savedSize = prefs.getInt(key, 0);
+  int selected = 0;
+  for (int i = 1; i < presets.length; i++) {
+   if (presets[i] == savedSize) selected = i;
   }
-  Button size = dropdownButton(caption.getText() + " font size", options, selected, 12,
+  boolean includeSavedSize = showCurrentSize && savedSize > 0 && selected == 0;
+  int[] sizes = includeSavedSize ? java.util.Arrays.copyOf(presets, presets.length + 1) : presets;
+  if (includeSavedSize) {
+   selected = presets.length;
+   sizes[selected] = savedSize;
+  }
+  boolean reading = labelId.equals("reading");
+  java.util.function.IntSupplier effectiveAutomaticSize =
+          reading ? this::automaticReadingFontSize : () -> automaticSize;
+  String[] options = new String[sizes.length];
+  options[0] = showCurrentSize ? "Automatic (" + effectiveAutomaticSize.getAsInt() + ")" : "Default";
+  for (int i = 1; i < sizes.length; i++) options[i] = Integer.toString(sizes[i]);
+  String sizeTitle = caption.getText() + " font size";
+  Button size = dropdownButton(sizeTitle, options, selected, 12,
+          index -> index == 0 && showCurrentSize
+                  ? Integer.toString(effectiveAutomaticSize.getAsInt()) : options[index],
           index -> previewSetting(key, sizes[index]));
+  if (reading) {
+   refreshReadingFontSize = () -> {
+    String current = Integer.toString(effectiveAutomaticSize.getAsInt());
+    options[0] = "Automatic (" + current + ")";
+    if ((Integer) previewSettings.getOrDefault(key, 0) <= 0) {
+     setDropdownCaption(size, sizeTitle, current);
+    }
+   };
+  }
+  if (showCurrentSize) size.setMinimumWidth(dp(52));
   LinearLayout.LayoutParams sizeLayout = new LinearLayout.LayoutParams(-2, -2);
   sizeLayout.leftMargin = dp(4);
   sizeLayout.rightMargin = dp(4);
   row.addView(size, sizeLayout);
   Switch visible = new Switch(this);
   styleSwitch(visible);
-  visible.setContentDescription("Show " + caption.getText());
+  visible.setContentDescription(labelId.equals("noData") ? caption.getText() : "Show " + caption.getText());
   String visibility = GaugeLabels.key(labelId, "visible");
   visible.setChecked(prefs.getBoolean(visibility, true));
   visible.setOnCheckedChangeListener((button, checked) -> previewSetting(visibility, checked));
   row.addView(visible, new LinearLayout.LayoutParams(-2, -2));
  }
 
- private void sizeRow(String title, String labelId) {
+ private void sizeRow(String title, String labelId, int automaticSize) {
   TextView caption = text(title, 14, TEXT, true);
-  sizeRow(caption, labelId);
+  sizeRow(caption, labelId, automaticSize);
  }
 
  EditText field(String key, String fallback) {
   boolean colorField = key.endsWith("color");
   if (!colorField) {
    TextView caption = text(key.equals("Name") ? "Gauge title" : key, 14, TEXT, true);
-   if (key.equals("Name")) sizeRow(caption, "title");
-   else if (key.equals("Units")) sizeRow(caption, "units");
+   if (key.equals("Name")) sizeRow(caption, "title", 32);
+   else if (key.equals("Units")) sizeRow(caption, "units", 48);
    else section.addView(caption);
   }
   EditText edit = new EditText(this);
@@ -346,12 +383,12 @@ public class GaugeSettings extends Activity {
   startSection("Labels");
   field("Name", "Coolant");
   field("Units", "°F");
-  sizeRow("Reading", "reading");
-  sizeRow("No data", "noData");
+  sizeRow("Reading", "reading", automaticReadingFontSize());
+  sizeRow("Display no data when information is unavailable", "noData", 23);
 
   startSection("Gauge");
   dropdown("Gauge style", new String[]{"Semicircular", "Circular"},
-          prefs.getBoolean("circle", false) ? 1 : 0, index -> previewSetting("circle", index == 1));
+          prefs.getBoolean("circle", false) ? 1 : 0, index -> previewGaugeMode("circle", index == 1));
   LinearLayout ticks = colorRow();
   addColorRowSwitch(ticks, toggle("showTicks", "Show tick marks", true));
   EditText tickColor = field("Tick color", "#84D5FF");
@@ -361,7 +398,9 @@ public class GaugeSettings extends Activity {
   addColorRowSwitch(numbers, indicatorNumbers);
   EditText fontColor = field("Font color", "#84D5FF");
   addColorButton(numbers, "shared font color", () -> pickColor("Font color", fontColor));
-  section.addView(toggle("info", "Information only", false));
+  Switch informationOnly = toggle("info", "Information only", false);
+  informationOnly.setOnCheckedChangeListener((button, checked) -> previewGaugeMode("info", checked));
+  section.addView(informationOnly);
   indicatorStyleRow();
   startSection("Information provider");
   boolean useGps = GpsMetric.selected(previewSettings) != null;
@@ -394,7 +433,7 @@ public class GaugeSettings extends Activity {
   startSection("Scale numbers");
   scaleNumbers = scaleSwitch("Show all scale numbers");
   section.addView(scaleNumbers);
-  for (int i = 0; i < 9; i++) sizeRow("Number " + (i + 1), "scale" + i);
+  for (int i = 0; i < 9; i++) sizeRow("Number " + (i + 1), "scale" + i, 0);
 
   startSection("Backup");
   Button backup = action("Make a backup", false);
@@ -425,6 +464,17 @@ public class GaugeSettings extends Activity {
 
  private Button dropdownButton(String title, String[] choices, int selected, int textSize,
                                java.util.function.IntConsumer change) {
+  return dropdownButton(title, choices, selected, textSize, index -> choices[index], change);
+ }
+
+ private void setDropdownCaption(Button button, String title, String current) {
+  button.setText(current + " ▾");
+  button.setContentDescription(title + ", " + current);
+ }
+
+ private Button dropdownButton(String title, String[] choices, int selected, int textSize,
+                               java.util.function.IntFunction<String> caption,
+                               java.util.function.IntConsumer change) {
   Button button = new Button(this);
   button.setAllCaps(false);
   button.setTextSize(textSize);
@@ -440,11 +490,7 @@ public class GaugeSettings extends Activity {
   button.setBackground(new RippleDrawable(ColorStateList.valueOf(0x24ffffff),
           surface(0xff34373d, 8), null));
   int[] selection = {Math.max(0, Math.min(choices.length - 1, selected))};
-  Runnable refresh = () -> {
-   String current = choices[selection[0]];
-   button.setText(current + " ▾");
-   button.setContentDescription(title + ", " + current);
-  };
+  Runnable refresh = () -> setDropdownCaption(button, title, caption.apply(selection[0]));
   refresh.run();
   button.setOnClickListener(view -> {
    PopupMenu popup = new PopupMenu(this, button, Gravity.START);
