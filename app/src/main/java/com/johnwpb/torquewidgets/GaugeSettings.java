@@ -505,6 +505,15 @@ public class GaugeSettings extends Activity {
    else if (value instanceof Boolean) editor.putBoolean(key, (Boolean) value);
   }
   editor.apply();
+  if (GpsMetric.selected(previewSettings) != null
+          && locationGranted(android.Manifest.permission.ACCESS_FINE_LOCATION)) {
+   try {
+    startForegroundService(new Intent(this, GpsWidgetService.class));
+   } catch (IllegalStateException | SecurityException e) {
+    Toast.makeText(this, "Live GPS could not start. Reopen widget settings and save again.",
+            Toast.LENGTH_LONG).show();
+   }
+  }
   setResult(RESULT_OK, new Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id));
   sendBroadcast(new Intent(this, CoolantWidget.class)
           .setAction(AppWidgetManager.ACTION_APPWIDGET_UPDATE)

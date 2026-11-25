@@ -11,7 +11,7 @@ public class CoolantWidget extends AppWidgetProvider {
   for (int id : ids) {
    GpsMetric metric = GpsMetric.selected(prefs(app, id).getAll());
    if (metric == null) torque.add(id);
-   else gps.put(id, metric);
+   else if (!GpsWidgetService.running) gps.put(id, metric);
   }
   int[] remaining = {(torque.isEmpty() ? 0 : 1) + (gps.isEmpty() ? 0 : 1)};
   if (remaining[0] == 0) {
