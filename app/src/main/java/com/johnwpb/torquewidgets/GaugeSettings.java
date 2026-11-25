@@ -146,7 +146,22 @@ public class GaugeSettings extends Activity {
   LinearLayout right = column();
   right.setBackground(surface(SURFACE, 16));
   right.setPadding(dp(12), dp(12), dp(12), dp(8));
-  right.addView(text("Live preview", 17, TEXT, true));
+  LinearLayout previewHeader = new LinearLayout(this);
+  TextView previewTitle = text("Live preview", 17, TEXT, true);
+  calibrateNeedle = action("Calibrate Needle", false);
+  calibrateNeedle.setOnClickListener(view -> openNeedleCalibration());
+  LinearLayout.LayoutParams calibrateLayout = new LinearLayout.LayoutParams(-2, -2);
+  if (screenWidth < 500) {
+   previewHeader.setOrientation(LinearLayout.VERTICAL);
+   calibrateLayout.gravity = Gravity.END;
+   previewHeader.addView(calibrateNeedle, calibrateLayout);
+   previewHeader.addView(previewTitle);
+  } else {
+   previewHeader.setGravity(Gravity.CENTER_VERTICAL);
+   previewHeader.addView(previewTitle, new LinearLayout.LayoutParams(0, -2, 1));
+   previewHeader.addView(calibrateNeedle, calibrateLayout);
+  }
+  right.addView(previewHeader, new LinearLayout.LayoutParams(-1, -2));
   right.addView(text("Drag a label to move it", 12, MUTED, false));
   Switch noData = new Switch(this);
   noData.setText("Preview no data");
@@ -363,7 +378,7 @@ public class GaugeSettings extends Activity {
   section.addView(caption);
   LinearLayout row = colorRow();
   String[] styles = {"Illuminated segments", "Sweeping needle", "Continuous arc", "None"};
-  int savedStyle = prefs.getInt("style", 0);
+  int savedStyle = (Integer) previewSettings.getOrDefault("style", 0);
   int selected = Math.max(0, Math.min(styles.length - 1, savedStyle));
   EditText indicatorColor = field("Indicator color", "#84D5FF");
   EditText needleColor = field("Needle color", "#84D5FF");
@@ -387,9 +402,6 @@ public class GaugeSettings extends Activity {
   caption.setLabelFor(menu.getId());
   row.addView(menu, 0, new LinearLayout.LayoutParams(-2, -2, 1));
   showColorControl.accept(selected);
-  calibrateNeedle = action("Calibrate Needle", false);
-  calibrateNeedle.setOnClickListener(view -> openNeedleCalibration());
-  section.addView(calibrateNeedle, new LinearLayout.LayoutParams(-2, -2));
   updateCalibrationButton();
  }
 
@@ -577,6 +589,7 @@ public class GaugeSettings extends Activity {
   }
   prefs = CoolantWidget.prefs(this, id);
   previewSettings.putAll(prefs.getAll());
+  if (previewSettings.isEmpty()) previewSettings.put("style", 1);
   buildColumns();
 
   startSection("Labels");
