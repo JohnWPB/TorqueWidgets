@@ -19,11 +19,6 @@ final class GaugeBackground {
         return new AtomicFile(new File(context.getFilesDir(), "gauge-background-" + id + ".png"));
     }
 
-    static File source(Context context, int id) {
-        File image = file(context, id).getBaseFile();
-        return image.isFile() ? image : null;
-    }
-
     static Bitmap open(ContentResolver resolver, Uri uri) throws IOException {
         BitmapFactory.Options options = new BitmapFactory.Options();
         options.inJustDecodeBounds = true;
